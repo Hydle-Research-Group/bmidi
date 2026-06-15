@@ -11,7 +11,7 @@
 Clone this repository into the desired folder with:
 
 ```sh
-git clone https://github.com/ktechhydle/bmidi.git
+git clone https://github.com/Hydle-Research-Group/bmidi.git
 ```
 
 ### 2. Install The Python Requirements
@@ -54,3 +54,9 @@ For all items, there is a `Channel` selector for selecting the specific channel 
 ## Capabilites
 
 There are a collection of demo videos in [this YouTube playlist](https://www.youtube.com/playlist?list=PLRZuj2NaHK4KhIysZkML9mRQQlm8HeguG) showcasing what `bmidi` is capable of. Additionally, all music is original.
+
+## Free & Open-Source
+
+`bmidi` is 100% free with no drawbacks or limitations. There is no "premium" version; you get the latest and greatest, all licensed under the GPL-3.0.
+
+All source code is public, to anyone. There is no "hidden mechanism" included in this repository; every reference and used factor exists completely and fully.
