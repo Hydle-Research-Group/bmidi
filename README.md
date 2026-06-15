@@ -16,7 +16,14 @@ git clone https://github.com/Hydle-Research-Group/bmidi.git
 
 ### 2. Install The Python Requirements
 
-Find the Blender Python executable's path using `bpy.app.binary_path` in the console, then input the following into a new terminal (located in this repositories root):
+Find the Blender Python executable by typing the following in the Blender console: 
+
+```python
+import sys
+print(sys.executable)
+```
+
+Input the following into the terminal (ensure the current working directory is located in the repository root):
 
 ```sh
 '<your blender python path>' -m pip install -r requirements.txt
@@ -28,7 +35,7 @@ You may have to ensure `pip` actually exists by first using:
 '<your blender python path>' -m ensurepip
 ```
 
-Then upgrading it with:
+Then upgrade it with:
 
 ```sh
 '<your blender python path>' -m pip install --upgrade pip
