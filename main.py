@@ -7,12 +7,10 @@ def initialize():
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
 
-    import src.instrument
-    import src.composition
+    import src.event
     import src.controller
 
-    importlib.reload(src.instrument)
-    importlib.reload(src.composition)
+    importlib.reload(src.event)
     importlib.reload(src.controller)
 
 initialize()
@@ -27,31 +25,45 @@ bl_info = {
     "category": "Development"
 }
 
+import mido
 import bpy
 import math
-from src.instrument import get_channel_items, get_midi_channel_ranges
-from src.composition import EffectComposition, HammerComposition, LightComposition, MovementComposition
-from src.controller import PositionalController, RoboticController
+from collections import defaultdict
+from src.event import Event
+from src.controller import BaseController
 
-ROTATION_PROPERTIES = ("rotation_euler.x", "rotation_euler.y", "rotation_euler.z")
-LOCATION_PROPERTIES = ("location.x", "location.y", "location.z")
-SCALE_PROPERTIES = ("scale.x", "scale.y", "scale.z")
-OBJECT_PROPERTIES = [
-    ("location.x", "Location X", ""),
-    ("location.y", "Location Y", ""),
-    ("location.z", "Location Z", ""),
-    ("rotation_euler.x", "Rotation X", ""),
-    ("rotation_euler.y", "Rotation Y", ""),
-    ("rotation_euler.z", "Rotation Z", ""),
-    ("scale.x", "Scale X", ""),
-    ("scale.y", "Scale Y", ""),
-    ("scale.z", "Scale Z", ""),
-]
-LIGHT_PROPERTIES = [
-    ("data.energy", "Light Power", ""),
-    ("emission.emission", "Emissive Power", "Applies only to objects with an emissive material"),
-    ("data.spot_size", "Spotlight Angle", "Applies only to spot light objects"),
-]
+def get_midi_channel_ranges(midi_path: str):
+    ranges = defaultdict(lambda: [127, 0])
+
+    try:
+        mid = mido.MidiFile(midi_path)
+    except Exception:
+        return {}
+
+    for track in mid.tracks:
+        for msg in track:
+            if msg.type == "note_on" and msg.velocity > 0:
+                ch = msg.channel + 1  # mido is 0–15
+                ranges[ch][0] = min(ranges[ch][0], msg.note)
+                ranges[ch][1] = max(ranges[ch][1], msg.note)
+
+    # Remove unused channels
+    return {
+        ch: (mn, mx)
+        for ch, (mn, mx) in ranges.items()
+        if mn <= mx
+    }
+
+def get_channel_items(_, context):
+    scene = context.scene
+
+    if scene.bmidi_midi_file:
+        channels = get_midi_channel_ranges(scene.bmidi_midi_file)
+
+        if channels:
+            return [(str(ch), str(ch), "") for ch in sorted(channels)]
+
+    return []
 
 def process_note_list(expr: str) -> list[int]:
     notes = []
@@ -65,6 +77,49 @@ def process_note_list(expr: str) -> list[int]:
 
     return notes
 
+class BMIDI_Event(bpy.types.PropertyGroup):
+    time: bpy.props.FloatProperty(
+        name="Time",
+        description="Time in seconds relative to the MIDI note",
+        default=0.0,
+    )
+    trigger: bpy.props.EnumProperty(
+        name="Trigger",
+        items=[
+            (
+                "BEFORE",
+                "Before MIDI Note",
+                "Execute this event before the MIDI note",
+            ),
+            (
+                "AFTER",
+                "After MIDI Note",
+                "Execute this event after the MIDI note",
+            ),
+        ],
+        default="AFTER",
+    )
+    action: bpy.props.EnumProperty(
+        name="Action",
+        items=[
+            ("location.x", "Move X", ""),
+            ("location.y", "Move Y", ""),
+            ("location.z", "Move Z", ""),
+            ("rotation_euler.x", "Rotate X", ""),
+            ("rotation_euler.y", "Rotate Y", ""),
+            ("rotation_euler.z", "Rotate Z", ""),
+            ("scale.x", "Scale X", ""),
+            ("scale.y", "Scale Y", ""),
+            ("scale.z", "Scale Z", ""),
+            ("data.energy", "Power Light", "Applies only to light objects"),
+            ("data.spot_size", "Angle Spotlight", "Applies only to spot light objects"),
+        ],
+    )
+    amount: bpy.props.FloatProperty(
+        name="Amount",
+        description="Number of units the action completes",
+        default=0.0,
+    )
 
 class BMIDI_Item(bpy.types.PropertyGroup):
     enabled: bpy.props.BoolProperty(
@@ -72,24 +127,7 @@ class BMIDI_Item(bpy.types.PropertyGroup):
         description="Generate keyframes for this item",
         default=True
     )
-    type: bpy.props.EnumProperty(
-        name="Type",
-        items=[
-            ("hammer_composition", "Hammer Composition", "A collection of hammer instruments that swing back and \"hit\" notes"),
-            ("movement_composition", "Movement Composition", "A collection of instruments that hold a certain position while a note is active"),
-            ("light_composition", "Light Composition", "A collection of light instruments that can be controlled by light power or material emissivity while a note is active"),
-            ("effect_composition", "Effect Composition", "A collection of effected instruments that have real world physics effects when notes are played"),
-            ("robotic_controller", "Robotic Controller", "A controller for robotic arm instruments that that swing back and \"hit\" target objects (notes)"),
-            ("position_controller", "Positional Controller", "A controller for positional instruments that move to specified note locations defined by a minimum and maximum range"),
-        ]
-    )
     object_prefix: bpy.props.StringProperty(name="Object Prefix")
-    object_property: bpy.props.EnumProperty(
-        name="Property",
-        items=OBJECT_PROPERTIES
-    )
-    pullback_amount: bpy.props.FloatProperty(name="Pullback Amount")
-    overshoot_amount: bpy.props.FloatProperty(name="Overshoot Amount")
     note_range_start: bpy.props.IntProperty(
         name="Note Range Start",
         min=0,
@@ -116,35 +154,11 @@ class BMIDI_Item(bpy.types.PropertyGroup):
         name="Channel",
         items=get_channel_items,
     )
-
-    # light controls
-    light_object_property: bpy.props.EnumProperty(
-        name="Light Property",
-        items=LIGHT_PROPERTIES
+    events: bpy.props.CollectionProperty(
+        type=BMIDI_Event,
     )
-    light_object_fade_effect: bpy.props.BoolProperty(name="Fade Effect")
-
-    # robotic controls
-    robot_target_object_name: bpy.props.StringProperty(name="Target Object Prefix")
-
-    # effect controls
-    effect: bpy.props.EnumProperty(
-        name="Effect",
-        items=[
-            ("bounce", "Bounce", ""),
-            ("swing", "Swing", ""),
-            ("expand", "Expand", ""),
-        ]
-    )
-
-    # axis controls
-    axis: bpy.props.EnumProperty(
-        name="Pullback Axis",
-        items=[
-            ("x", "X Axis", ""),
-            ("y", "Y Axis", ""),
-            ("z", "Z Axis", ""),
-        ]
+    active_event: bpy.props.IntProperty(
+        default=0,
     )
 
 class BMIDI_UL_items(bpy.types.UIList):
@@ -154,8 +168,18 @@ class BMIDI_UL_items(bpy.types.UIList):
     ):
         row = layout.row(align=True)
         row.prop(item, "object_prefix", text="", emboss=False, icon="SOUND")
-        row.prop(item, "type", text="", emboss=False)
         row.prop(item, "enabled", text="")
+
+class BMIDI_UL_item_events(bpy.types.UIList):
+    def draw_item(
+        self, context, layout, data, item, icon,
+        active_data, active_propname, index
+    ):
+        row = layout.row(align=True)
+        row.prop(item, "time", text="")
+        row.prop(item, "trigger", text="")
+        row.prop(item, "action", text="")
+        row.prop(item, "amount", text="")
 
 class VIEW_3D_OT_add_item(bpy.types.Operator):
     """Adds a new item"""
@@ -198,23 +222,110 @@ class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
         items.add()
         dst = items[-1]
 
-        # copy all RNA properties
+        for prop in src.bl_rna.properties:
+            if prop.identifier in {"rna_type", "events"}:
+                continue
+
+            setattr(
+                dst,
+                prop.identifier,
+                getattr(src, prop.identifier)
+            )
+
+        # copy events
+        for src_event in src.events:
+            dst_event = dst.events.add()
+
+            for prop in src_event.bl_rna.properties:
+                if prop.identifier == "rna_type":
+                    continue
+
+                setattr(
+                    dst_event,
+                    prop.identifier,
+                    getattr(src_event, prop.identifier)
+                )
+        dst.object_prefix = f"{src.object_prefix} (COPY)"
+        items.move(len(items) - 1, idx + 1)
+        context.scene.bmidi_active_item = idx + 1
+
+        if len(dst.events) > 0:
+            dst.active_event = 0
+
+        return {'FINISHED'}
+
+class VIEW_3D_OT_add_event(bpy.types.Operator):
+    """Adds a new event"""
+    bl_idname = "bmidi_items.add_event"
+    bl_label = "Add Event"
+
+    def execute(self, context):
+        scene = context.scene
+        item = scene.bmidi_items[scene.bmidi_active_item]
+
+        item.events.add()
+        item.active_event = len(item.events) - 1
+
+        return {'FINISHED'}
+
+class VIEW_3D_OT_remove_event(bpy.types.Operator):
+    """Removes the selected event"""
+    bl_idname = "bmidi_items.remove_event"
+    bl_label = "Remove Event"
+
+    def execute(self, context):
+        scene = context.scene
+        item = scene.bmidi_items[scene.bmidi_active_item]
+
+        idx = item.active_event
+
+        if idx < 0 or idx >= len(item.events):
+            return {'CANCELLED'}
+
+        item.events.remove(idx)
+
+        item.active_event = min(
+            idx,
+            max(0, len(item.events) - 1)
+        )
+
+        return {'FINISHED'}
+
+class VIEW_3D_OT_duplicate_event(bpy.types.Operator):
+    """Duplicates the selected event"""
+    bl_idname = "bmidi_items.duplicate_event"
+    bl_label = "Duplicate Event"
+
+    def execute(self, context):
+        scene = context.scene
+        item = scene.bmidi_items[scene.bmidi_active_item]
+        events = item.events
+
+        idx = item.active_event
+
+        if idx < 0 or idx >= len(events):
+            return {'CANCELLED'}
+
+        src = events[idx]
+
+        events.add()
+        dst = events[-1]
+
         for prop in src.bl_rna.properties:
             if prop.identifier == "rna_type":
                 continue
+
             setattr(dst, prop.identifier, getattr(src, prop.identifier))
 
-        dst.object_prefix = f"{src.object_prefix} (COPY)"
+        events.move(len(events) - 1, idx + 1)
 
-        # move it right after the original
-        items.move(len(items) - 1, idx + 1)
-        context.scene.bmidi_active_item = idx + 1
+        item.active_event = idx + 1
 
         return {'FINISHED'}
 
 class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
     """
-    Clears object animation data and generates the keyframes for all instruments and compositions
+    Clears object animation data and generates the keyframes for all items
     """
     bl_idname = "bmidi.generate_keyframes"
     bl_label = "Generate Keyframes"
@@ -231,14 +342,11 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
             if not item.enabled:
                 continue
 
-            needs_radians = (
-                (True if item.object_property in ROTATION_PROPERTIES else False) or
-                (item.type == "light_composition" and item.light_object_property == "data.spot_size") or
-                (item.type == "effect_composition" and item.effect == "swing")
-            )
+            events = []
 
-            pullback_amount = math.radians(item.pullback_amount) if needs_radians else item.pullback_amount
-            overshoot_amount = math.radians(item.overshoot_amount) if needs_radians else item.overshoot_amount
+            for e in item.events:
+                events.append(Event(e.time, True if e.trigger == "BEFORE" else False, e.action, e.amount))
+
             channel = int(item.channel) - 1
 
             note_start = item.note_range_start
@@ -246,73 +354,8 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
             blocked_notes = process_note_list(item.blocked_notes) if item.use_block_list else []
             notes = [i for i in range(note_start, note_end) if i not in blocked_notes]
 
-            if item.type == "hammer_composition":
-                composition = HammerComposition(
-                    midi_file,
-                    item.object_prefix,
-                    item.object_property,
-                    pullback_amount,
-                    notes,
-                    overshoot_amount=overshoot_amount,
-                    channel=channel,
-                )
-                composition.generate_keyframes()
-            elif item.type == "movement_composition":
-                composition = MovementComposition(
-                    midi_file,
-                    item.object_prefix,
-                    item.object_property,
-                    pullback_amount,
-                    notes,
-                    channel=channel,
-                )
-                composition.generate_keyframes()
-            elif item.type == "light_composition":
-                composition = LightComposition(
-                    midi_file,
-                    item.object_prefix,
-                    item.light_object_property,
-                    pullback_amount,
-                    overshoot_amount,
-                    notes,
-                    mode="light" if item.light_object_property != "emission.emission" else "emission",
-                    fade_effect=item.light_object_fade_effect,
-                    channel=channel,
-                )
-                composition.generate_keyframes()
-            elif item.type == "effect_composition":
-                composition = EffectComposition(
-                    midi_file,
-                    item.object_prefix,
-                    pullback_amount,
-                    item.axis,
-                    item.effect,
-                    notes,
-                    channel=channel,
-                )
-                composition.generate_keyframes()
-            elif item.type == "robotic_controller":
-                instrument = RoboticController(
-                    midi_file,
-                    item.object_prefix,
-                    item.robot_target_object_name,
-                    pullback_amount,
-                    item.axis,
-                    notes=notes,
-                    channel=channel,
-                )
-                instrument.generate_keyframes()
-            elif item.type == "position_controller":
-                instrument = PositionalController(
-                    midi_file,
-                    item.object_prefix,
-                    item.object_property,
-                    pullback_amount,
-                    overshoot_amount,
-                    notes=notes,
-                    channel=channel,
-                )
-                instrument.generate_keyframes()
+            controller = BaseController(item.object_prefix, midi_file, events, notes, channel)
+            controller.generate_keyframes()
 
         return {'FINISHED'}
 
@@ -393,35 +436,23 @@ class VIEW_3D_PT_bmidi_panel(bpy.types.Panel):
         if scene.bmidi_items:
             item = scene.bmidi_items[scene.bmidi_active_item]
 
-            layout.prop(item, "object_prefix", text="Object Prefix" if item.type not in ("robotic_controller", "position_controller") else "Control Object")
+            layout.prop(item, "object_prefix", text="Object Prefix")
 
-            if item.type not in ("robotic_controller", "effect_composition"):
-                layout.prop(item, "object_property" if item.type != "light_composition" else "light_object_property")
-            elif item.type == "robotic_controller":
-                layout.prop(item, "robot_target_object_name")
-                layout.prop(item, "axis")
+            row = layout.row()
+            row.template_list(
+                "BMIDI_UL_item_events",
+                "",
+                item,
+                "events",
+                item,
+                "active_event"
+            )
 
-            if item.type == "movement_composition":
-                layout.prop(item, "pullback_amount", text="Final Amount")
-            elif item.type == "light_composition":
-                layout.prop(item, "pullback_amount", text="Initial Factor")
-                layout.prop(item, "overshoot_amount", text="Final Factor")
-            elif item.type == "effect_composition":
-                layout.prop(item, "pullback_amount", text="Effect Amount")
-            elif item.type == "position_controller":
-                layout.prop(item, "pullback_amount", text="Minimum Position")
-                layout.prop(item, "overshoot_amount", text="Maximum Position")
-            else:
-                layout.prop(item, "pullback_amount")
-
-            if item.type == "effect_composition":
-                layout.prop(item, "effect")
-                layout.prop(item, "axis", text="Effect Axis")
-
-            if item.type not in ("movement_composition", "light_composition", "effect_composition", "robotic_controller", "position_controller"):
-                layout.prop(item, "overshoot_amount")
-
-            layout.separator()
+            col = row.column(align=True)
+            col.operator("bmidi_items.add_event", icon="ADD", text="")
+            col.operator("bmidi_items.remove_event", icon="REMOVE", text="")
+            col.separator()
+            col.operator("bmidi_items.duplicate_event", icon="DUPLICATE", text="")
 
             layout.prop(item, "note_range_start")
             layout.prop(item, "note_range_end")
@@ -430,10 +461,6 @@ class VIEW_3D_PT_bmidi_panel(bpy.types.Panel):
             if item.use_block_list:
                 layout.prop(item, "blocked_notes")
 
-            layout.separator()
-
-            if item.type in ("light_instrument", "light_composition"):
-                layout.prop(item, "light_object_fade_effect")
 
             layout.separator()
             layout.prop(item, "channel")
@@ -459,8 +486,10 @@ class VIEW_3D_PT_bmidi_rename_panel(bpy.types.Panel):
         layout.operator("bmidi.rename_selected", icon="TEXT")
 
 def register():
+    bpy.utils.register_class(BMIDI_Event)
     bpy.utils.register_class(BMIDI_Item)
     bpy.utils.register_class(BMIDI_UL_items)
+    bpy.utils.register_class(BMIDI_UL_item_events)
 
     # item config
     bpy.types.Scene.bmidi_items = bpy.props.CollectionProperty(
@@ -493,8 +522,11 @@ def register():
     bpy.utils.register_class(VIEW_3D_PT_bmidi_panel)
     bpy.utils.register_class(VIEW_3D_PT_bmidi_rename_panel)
     bpy.utils.register_class(VIEW_3D_OT_add_item)
+    bpy.utils.register_class(VIEW_3D_OT_add_event)
     bpy.utils.register_class(VIEW_3D_OT_remove_item)
+    bpy.utils.register_class(VIEW_3D_OT_remove_event)
     bpy.utils.register_class(VIEW_3D_OT_duplicate_item)
+    bpy.utils.register_class(VIEW_3D_OT_duplicate_event)
     bpy.utils.register_class(VIEW_3D_OT_generate_keyframes)
     bpy.utils.register_class(VIEW_3D_OT_rename_selected)
 
@@ -503,8 +535,11 @@ def unregister():
     bpy.utils.unregister_class(VIEW_3D_PT_bmidi_panel)
     bpy.utils.unregister_class(VIEW_3D_PT_bmidi_rename_panel)
     bpy.utils.unregister_class(VIEW_3D_OT_add_item)
+    bpy.utils.unregister_class(VIEW_3D_OT_add_event)
     bpy.utils.unregister_class(VIEW_3D_OT_remove_item)
+    bpy.utils.unregister_class(VIEW_3D_OT_remove_event)
     bpy.utils.unregister_class(VIEW_3D_OT_duplicate_item)
+    bpy.utils.unregister_class(VIEW_3D_OT_duplicate_event)
     bpy.utils.unregister_class(VIEW_3D_OT_generate_keyframes)
     bpy.utils.unregister_class(VIEW_3D_OT_rename_selected)
 
