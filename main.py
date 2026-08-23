@@ -345,7 +345,9 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
             events = []
 
             for e in item.events:
-                events.append(Event(e.time, True if e.trigger == "BEFORE" else False, e.action, e.amount))
+                needs_radians = True if e.action in ("rotation_euler.x", "rotation_euler.y", "rotation_euler.z", "data.spot_size") else False
+
+                events.append(Event(e.time, True if e.trigger == "BEFORE" else False, e.action, math.radians(e.amount) if needs_radians else e.amount))
 
             channel = int(item.channel) - 1
 
