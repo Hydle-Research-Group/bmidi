@@ -143,7 +143,7 @@ class BMIDI_Item(bpy.types.PropertyGroup):
     )
     use_block_list: bpy.props.BoolProperty(
         name="Use Block List",
-        description="Block certain notes used by a composition or controller",
+        description="Block certain notes from being key-framed",
         default=False
     )
     blocked_notes: bpy.props.StringProperty(
