@@ -82,6 +82,7 @@ class BMIDI_Event(bpy.types.PropertyGroup):
         name="Time",
         description="Time in seconds relative to the MIDI note",
         default=0.0,
+        soft_min=0.0,
     )
     trigger: bpy.props.EnumProperty(
         name="Trigger",
