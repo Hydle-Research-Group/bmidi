@@ -12,6 +12,14 @@ def set_prop(obj, prop_path: str, value):
     setattr(container, attr, value)
 
 class Controller:
+    """
+    A controller object.
+
+    - `midi_file`: a valid path to a midi file
+    - `events`: a list of `Event` objects
+    - `notes`: a list of integers (MIDI notes 0-127)
+    - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
+    """
     def __init__(self, midi_file: str, events: list[Event] = [], notes: list[int] = [], channel: int | None = None):
         self._midi_events = []
         self._events = events
@@ -52,19 +60,44 @@ class Controller:
                     })
 
     def midi_events(self) -> list[dict[str, float]]:
+        """
+        Returns the MIDI events generated from the MIDI source.
+        """
+
         return self._midi_events
 
     def events(self) -> list[Event]:
+        """
+        Returns a list of `Event` objects contained in the controller.
+        """
+
         return self._events
 
     def notes(self) -> list[int]:
+        """
+        Returns a list of integers (MIDI notes 0-127) contained in the controller.
+
+        The returned list only contains the notes used by the controller.
+        """
+
         return self._notes
 
     def generate_keyframes(self) -> None:
+        """
+        Generate the keyframes for this controller.
+        """
+
         pass
 
 class BaseController(Controller):
     """
+    A base controller that key-frames a set of animation events based on MIDI data.
+
+    - `object_prefix`: the object prefix
+    - `midi_file`: a valid path to a midi file
+    - `events`: a list of `Event` objects
+    - `notes`: a list of integers (MIDI notes 0-127)
+    - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
     """
     def __init__(self, object_prefix: str, midi_file: str, events: list[Event] = [], notes: list[int] = [], channel: int | None = None):
         super().__init__(midi_file, events, notes, channel)
