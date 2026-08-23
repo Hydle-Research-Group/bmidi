@@ -183,7 +183,7 @@ class BMIDI_UL_item_events(bpy.types.UIList):
         row.prop(item, "amount", text="")
 
 class VIEW_3D_OT_add_item(bpy.types.Operator):
-    """Adds a new item"""
+    """Add a new item"""
     bl_idname = "bmidi_items.add_item"
     bl_label = "Add Item"
 
@@ -194,7 +194,7 @@ class VIEW_3D_OT_add_item(bpy.types.Operator):
         return {'FINISHED'}
 
 class VIEW_3D_OT_remove_item(bpy.types.Operator):
-    """Removes the selected item"""
+    """Remove the selected item"""
     bl_idname = "bmidi_items.remove_item"
     bl_label = "Remove Item"
 
@@ -206,7 +206,7 @@ class VIEW_3D_OT_remove_item(bpy.types.Operator):
         return {'FINISHED'}
 
 class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
-    """Duplicates the selected item"""
+    """Duplicate the selected item"""
     bl_idname = "bmidi_items.duplicate_item"
     bl_label = "Duplicate Item"
 
@@ -256,7 +256,7 @@ class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
         return {'FINISHED'}
 
 class VIEW_3D_OT_add_event(bpy.types.Operator):
-    """Adds a new event"""
+    """Add a new event"""
     bl_idname = "bmidi_items.add_event"
     bl_label = "Add Event"
 
@@ -270,7 +270,7 @@ class VIEW_3D_OT_add_event(bpy.types.Operator):
         return {'FINISHED'}
 
 class VIEW_3D_OT_remove_event(bpy.types.Operator):
-    """Removes the selected event"""
+    """Remove the selected event"""
     bl_idname = "bmidi_items.remove_event"
     bl_label = "Remove Event"
 
@@ -292,8 +292,48 @@ class VIEW_3D_OT_remove_event(bpy.types.Operator):
 
         return {'FINISHED'}
 
+class VIEW_3D_OT_move_event_up(bpy.types.Operator):
+    """Move the selected event up the list"""
+    bl_idname = "bmidi_items.move_event_up"
+    bl_label = "Move Event Up"
+
+    def execute(self, context):
+        scene = context.scene
+        item = scene.bmidi_items[scene.bmidi_active_item]
+
+        idx = item.active_event
+        new = idx - 1
+
+        if new < 0:
+            return {'CANCELLED'}
+
+        item.events.move(idx, new)
+        item.active_event = new
+
+        return {'FINISHED'}
+
+class VIEW_3D_OT_move_event_down(bpy.types.Operator):
+    """Move the selected event down the list"""
+    bl_idname = "bmidi_items.move_event_down"
+    bl_label = "Move Event Down"
+
+    def execute(self, context):
+        scene = context.scene
+        item = scene.bmidi_items[scene.bmidi_active_item]
+
+        idx = item.active_event
+        new = idx + 1
+
+        if new >= len(item.events):
+            return {'CANCELLED'}
+
+        item.events.move(idx, new)
+        item.active_event = new
+
+        return {'FINISHED'}
+
 class VIEW_3D_OT_duplicate_event(bpy.types.Operator):
-    """Duplicates the selected event"""
+    """Duplicate the selected event"""
     bl_idname = "bmidi_items.duplicate_event"
     bl_label = "Duplicate Event"
 
@@ -455,6 +495,9 @@ class VIEW_3D_PT_bmidi_panel(bpy.types.Panel):
             col.operator("bmidi_items.add_event", icon="ADD", text="")
             col.operator("bmidi_items.remove_event", icon="REMOVE", text="")
             col.separator()
+            col.operator("bmidi_items.move_event_up", icon="TRIA_UP", text="")
+            col.operator("bmidi_items.move_event_down", icon="TRIA_DOWN", text="")
+            col.separator()
             col.operator("bmidi_items.duplicate_event", icon="DUPLICATE", text="")
 
             layout.prop(item, "note_range_start")
@@ -528,6 +571,8 @@ def register():
     bpy.utils.register_class(VIEW_3D_OT_add_event)
     bpy.utils.register_class(VIEW_3D_OT_remove_item)
     bpy.utils.register_class(VIEW_3D_OT_remove_event)
+    bpy.utils.register_class(VIEW_3D_OT_move_event_up)
+    bpy.utils.register_class(VIEW_3D_OT_move_event_down)
     bpy.utils.register_class(VIEW_3D_OT_duplicate_item)
     bpy.utils.register_class(VIEW_3D_OT_duplicate_event)
     bpy.utils.register_class(VIEW_3D_OT_generate_keyframes)
@@ -541,6 +586,8 @@ def unregister():
     bpy.utils.unregister_class(VIEW_3D_OT_add_event)
     bpy.utils.unregister_class(VIEW_3D_OT_remove_item)
     bpy.utils.unregister_class(VIEW_3D_OT_remove_event)
+    bpy.utils.unregister_class(VIEW_3D_OT_move_event_up)
+    bpy.utils.unregister_class(VIEW_3D_OT_move_event_down)
     bpy.utils.unregister_class(VIEW_3D_OT_duplicate_item)
     bpy.utils.unregister_class(VIEW_3D_OT_duplicate_event)
     bpy.utils.unregister_class(VIEW_3D_OT_generate_keyframes)
