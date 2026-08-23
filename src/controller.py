@@ -73,11 +73,14 @@ class BaseController(Controller):
 
     def generate_keyframes(self) -> None:
         object_prefix = self.object_prefix
-        midi_events = self.midi_events()
         events = self.events()
         fps = bpy.context.scene.render.fps
 
-        for i, e in enumerate(midi_events):
+        for n in self.notes():
+            target = bpy.data.objects[f"{object_prefix}{n}"]
+            target.animation_data_clear()
+
+        for e in self.midi_events():
             target = bpy.data.objects[f"{object_prefix}{e['note']}"]
             start = e["start"] * fps
             # duration = e["duration"] * fps
@@ -86,11 +89,13 @@ class BaseController(Controller):
             for event in events:
                 prop = event.property()
                 keyframe_prop = prop.split(".")[0]
+                time = event.time() * fps
+                amount = event.amount()
 
-                set_prop(target, prop, event.amount())
+                set_prop(target, prop, amount)
                 target.keyframe_insert(
                     data_path=keyframe_prop,
-                    frame=start - event.time() if event.before_note() else start + event.time()
+                    frame=start - time if event.before_note() else start + time
                 )
 
 # class RoboticController(Controller):
