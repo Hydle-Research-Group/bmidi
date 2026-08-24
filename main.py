@@ -98,7 +98,7 @@ class BMIDI_Event(bpy.types.PropertyGroup):
                 "Execute this event after the MIDI note",
             ),
         ],
-        default="AFTER",
+        default="BEFORE",
     )
     action: bpy.props.EnumProperty(
         name="Action",
