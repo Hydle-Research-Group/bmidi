@@ -1,3 +1,5 @@
+from bpy.types import Object
+import imp
 def initialize():
     import sys
     import importlib
@@ -7,9 +9,11 @@ def initialize():
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
 
+    import src.note
     import src.event
     import src.controller
 
+    importlib.reload(src.note)
     importlib.reload(src.event)
     importlib.reload(src.controller)
 
