@@ -125,7 +125,7 @@ class BaseController(Controller):
                 time = event.time() * fps
                 amount = event.amount()
 
-                set_prop(target, prop, amount)
+                set_prop(target, prop, get_prop(target, prop) + amount)
                 target.keyframe_insert(
                     data_path=keyframe_prop,
                     frame=start - time if event.before_note() else start + time
