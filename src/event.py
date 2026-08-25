@@ -1,16 +1,16 @@
 class Event:
     """
-    A single event occuring when a MIDI note is played.
+    A single event occurring when a MIDI note is played.
 
     - `time`: the relative time (in seconds)
-    - `before_note`: `True` if the event occurs before a note, otherwise `False`
+    - `trigger`: the `EventTrigger` that determines when the note plays
     - `property`: the [Blender object property](https://docs.blender.org/api/current/bpy.props.html) of the event
     - `amount`: the unit amount `property` is adjusted
     """
 
-    def __init__(self, time: float, before_note: bool, property: str, amount: float):
+    def __init__(self, time: float, trigger: str, property: str, amount: float):
         self._time = time
-        self._before_note = before_note
+        self._trigger = trigger
         self._property = property
         self._amount = amount
 
@@ -21,12 +21,12 @@ class Event:
 
         return self._time
 
-    def before_note(self) -> bool:
+    def trigger(self) -> str:
         """
-        Returns if the event occurs before a note (`True`) or after (`False`)
+        Returns the `EventTrigger` of the event
         """
 
-        return self._before_note
+        return self._trigger
 
     def property(self) -> str:
         """
@@ -41,3 +41,9 @@ class Event:
         """
 
         return self._amount
+
+class EventTrigger:
+    BeforeStart = "BEFORE_START"
+    BeforeEnd = "BEFORE_END"
+    AfterStart = "AFTER_END"
+    AfterEnd = "AFTER_END"

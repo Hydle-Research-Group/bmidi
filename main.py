@@ -33,7 +33,7 @@ import mido
 import bpy
 import math
 from collections import defaultdict
-from src.event import Event
+from src.event import Event, EventTrigger
 from src.controller import BaseController
 
 def get_midi_channel_ranges(midi_path: str):
@@ -92,17 +92,27 @@ class BMIDI_Event(bpy.types.PropertyGroup):
         name="Trigger",
         items=[
             (
-                "BEFORE",
-                "Before MIDI Note",
-                "Execute this event before the MIDI note",
+                EventTrigger.BeforeStart,
+                "Before MIDI Note Starts",
+                "Execute this event before the MIDI note starts",
             ),
             (
-                "AFTER",
-                "After MIDI Note",
-                "Execute this event after the MIDI note",
+                EventTrigger.AfterStart,
+                "After MIDI Note Starts",
+                "Execute this event after the MIDI note starts",
+            ),
+            (
+                EventTrigger.BeforeEnd,
+                "Before MIDI Note Ends",
+                "Execute this event before the MIDI note ends",
+            ),
+            (
+                EventTrigger.AfterEnd,
+                "After MIDI Note Ends",
+                "Execute this event after the MIDI note ends",
             ),
         ],
-        default="BEFORE",
+        default=EventTrigger.BeforeStart,
     )
     action: bpy.props.EnumProperty(
         name="Action",

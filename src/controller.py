@@ -1,8 +1,8 @@
-from mathutils import Vector
 import mido
 import bpy
+from mathutils import Vector
 from bpy.types import Object
-from src.event import Event
+from src.event import Event, EventTrigger
 from src.note import MidiNote
 
 def get_prop(obj, prop_path: str):
@@ -116,6 +116,7 @@ class BaseController(Controller):
         for note in self.notes():
             target = bpy.data.objects[f"{object_prefix}{note.note()}"]
             start = note.start() * fps
+            end = note.end() * fps
             # duration = e["duration"] * fps
             # velocity = 1 + (1 - e["velocity"]) * 1.5
 
@@ -125,10 +126,21 @@ class BaseController(Controller):
                 time = event.time() * fps
                 amount = event.amount()
 
+                if event.trigger() == EventTrigger.BeforeStart:
+                    frame = start - time
+                elif event.trigger() == EventTrigger.AfterStart:
+                    frame = start + time
+                elif event.trigger() == EventTrigger.BeforeEnd:
+                    frame = end - time
+                elif event.trigger() == EventTrigger.AfterEnd:
+                    frame = end + time
+                else:
+                    frame = start
+
                 set_prop(target, prop, get_prop(target, prop) + amount)
                 target.keyframe_insert(
                     data_path=keyframe_prop,
-                    frame=start - time if event.before_note() else start + time
+                    frame=frame
                 )
 
 class RoboticController(Controller):
