@@ -1,8 +1,9 @@
-from src.note import MidiNote
-from bpy.types import Object
+from mathutils import Vector
 import mido
 import bpy
+from bpy.types import Object
 from src.event import Event
+from src.note import MidiNote
 
 def get_prop(obj, prop_path: str):
     root, attr = prop_path.split(".")
@@ -55,6 +56,10 @@ class Controller:
                     start_time, velocity = active_notes.pop(key)
 
                     self._notes.append(MidiNote(start_time, current_time - start_time, msg.note, velocity))
+
+        # first/last setting
+        self._notes[0]._first = True
+        self._notes[len(self._notes) - 1]._last = True
 
     def notes(self) -> list[MidiNote]:
         """
@@ -126,198 +131,114 @@ class BaseController(Controller):
                     frame=start - time if event.before_note() else start + time
                 )
 
-# class RoboticController(Controller):
-#     """
-#     Represents a robotic arm that will move to hit specified targets (notes)
+class RoboticController(Controller):
+    def __init__(self, arm_objects: list[str], target_prefix: str, midi_file: str, events: list[Event] = [], notes: list[int] = [], channel: int | None = None):
+        super().__init__(midi_file, events, notes, channel)
 
-#     Targets are represented with the format `<object_prefix><note_number>`, for example, a drum head might be named `Snare25`
-#     """
-#     def __init__(
-#         self,
-#         midi_file: str,
-#         control_object: str,
-#         target_object_prefix: str,
-#         pullback_amount: float,
-#         pullback_axis: str,
-#         notes: list[int] = [],
-#         channel: int | None = None,
-#     ):
-#         super().__init__(midi_file, notes, channel)
+        self.target_prefix = target_prefix
+        self.arm_objects = {}
 
-#         self.control_object = bpy.data.objects[control_object]
-#         self.target_object_prefix = target_object_prefix
-#         self.pullback_amount = pullback_amount
-#         self.pullback_axis = pullback_axis
+        for name in arm_objects:
+            obj = bpy.data.objects[name]
+            obj.animation_data_clear()
 
-#         self.control_object.animation_data_clear()
+            self.arm_objects[obj] = (obj.location.copy(), obj.rotation_euler.copy())
 
-#     def generate_keyframes(self):
-#         events = self.midi_events()
-#         fps = bpy.context.scene.render.fps
-#         control = self.control_object
-#         target_object_prefix = self.target_object_prefix
-#         pullback = self.pullback_amount
-#         axis = self.pullback_axis
-#         base = control.location.copy()
+    def generate_keyframes(self):
+        target_prefix = self.target_prefix
+        arm_objects = self.arm_objects
+        fps = bpy.context.scene.render.fps
+        notes = self.notes()
 
-#         offset_vec = mathutils.Vector(
-#             (
-#                 pullback if axis == "x" else 0,
-#                 pullback if axis == "y" else 0,
-#                 pullback if axis == "z" else 0,
-#             )
-#         )
+        pre_move_duration = 0.1 * fps
+        return_duration = 2.0 * fps
+        lift = 0.1
 
-#         first_frame = True
+        for i, note in enumerate(notes):
+            target = bpy.data.objects[f"{target_prefix}{note.note()}"]
+            start = note.start() * fps
+            end = note.end() * fps
+            next_event = None if i == len(notes) - 1 else notes[i + 1]
 
-#         for i, e in enumerate(events):
-#             next_event = events[i + 1] if i + 1 < len(events) else None
+            # target normal
+            normal = target.matrix_world.to_3x3() @ Vector((0, 0, 1))
+            normal.normalize()
 
-#             target = bpy.data.objects[f"{target_object_prefix}{e['note']}"]
-#             start = e["start"] * fps
-#             # velocity = 1 + (1 - e["velocity"]) * 1.5
+            # locations
+            hit_location = target.location.copy()
+            target_rotation = target.rotation_euler.copy()
+            approach_location = hit_location + normal * lift
 
-#             if next_event:
-#                 duration = (next_event["start"] * fps) - start
-#             else:
-#                 duration = e["duration"] * fps
+            # move arm to default positions before
+            if note.is_first():
+                for arm, origin in arm_objects.items():
+                    arm.location = origin[0]
+                    arm.rotation_euler = origin[1]
+                    arm.keyframe_insert(
+                        data_path="location",
+                        frame=start - pre_move_duration
+                    )
+                    arm.keyframe_insert(
+                        data_path="rotation_euler",
+                        frame=start - pre_move_duration
+                    )
 
-#             pullback_frames = duration * 0.2
-#             strike_frames = duration * 0.3
-#             rebound_frames = duration * 0.2
-#             pullback_start = start - pullback_frames
-#             strike_mid = start - (strike_frames * 0.5)
-#             impact = start
-#             rebound_end = start + rebound_frames
+            candidates = sorted(arm_objects.items(), key=lambda a: (target.location - a[0].location).length)
+            closest = candidates[0][0]
 
-#             if first_frame:
-#                 first_frame = False
+            # approach
+            closest.location = approach_location
+            closest.rotation_euler = target_rotation
+            closest.keyframe_insert(
+                data_path="location",
+                frame=start - pre_move_duration
+            )
+            closest.keyframe_insert(
+                data_path="rotation_euler",
+                frame=start - pre_move_duration
+            )
 
-#                 # initial
-#                 control.location = base
-#                 control.keyframe_insert(
-#                     data_path="location",
-#                     frame=pullback_start - duration
-#                 )
+            # hit
+            closest.location = hit_location
+            closest.keyframe_insert(
+                data_path="location",
+                frame=start
+            )
 
-#             # move up
-#             control.location = control.location + offset_vec
-#             control.keyframe_insert(
-#                 data_path="location",
-#                 frame=pullback_start
-#             )
+            # return to the resting location or lift off the note
+            if next_event and next_event.duration() * fps >= return_duration:
+                closest.location = arm_objects[closest][0]
+                closest.rotation_euler = arm_objects[closest][1]
+                closest.keyframe_insert(
+                    data_path="location",
+                    frame=end + return_duration
+                )
+                closest.keyframe_insert(
+                    data_path="rotation_euler",
+                    frame=end + return_duration
+                )
+            else:
+                closest.location = approach_location
+                closest.rotation_euler = arm_objects[closest][1]
+                closest.keyframe_insert(
+                    data_path="location",
+                    frame=end + pre_move_duration
+                )
+                closest.keyframe_insert(
+                    data_path="rotation_euler",
+                    frame=start + pre_move_duration
+                )
 
-#             # across
-#             control.location = target.location + offset_vec
-#             control.keyframe_insert(
-#                 data_path="location",
-#                 frame=strike_mid
-#             )
-
-#             # hit
-#             control.location = target.location
-#             control.keyframe_insert(
-#                 data_path="location",
-#                 frame=impact
-#             )
-
-#             rebound_end = start + rebound_frames
-
-#             # look ahead for the next event and animate the transition (if no next event, return to base)
-#             if next_event:
-#                 next_target = bpy.data.objects[f"{target_object_prefix}{next_event['note']}"]
-#                 next_start = next_event["start"] * fps
-
-#                 next_hover_pos = next_target.location + offset_vec
-
-#                 control.location = target.location + offset_vec
-#                 control.keyframe_insert(
-#                     data_path="location",
-#                     frame=rebound_end
-#                 )
-
-#                 next_pullback_frames = (next_event["duration"] * fps) * 0.2
-#                 next_pullback_start = next_start - next_pullback_frames
-
-#                 control.location = next_hover_pos
-#                 control.keyframe_insert(
-#                     data_path="location",
-#                     frame=next_pullback_start
-#                 )
-#             else:
-#                 # final reset
-#                 control.location = base
-#                 control.keyframe_insert(data_path="location", frame=rebound_end + (fps * 1.0))
-
-# class PositionalController(Controller):
-#     """
-#     Represents an object that will move to certain positions based on what note is being played
-
-#     Targets are represented with the format `<object_prefix><note_number>`, for example, a drum head might be named `Snare25`
-#     """
-#     def __init__(
-#         self,
-#         midi_file: str,
-#         object_name: str,
-#         object_property: str,
-#         min_position: float,
-#         max_position: float,
-#         notes: list[int] = [],
-#         channel: int | None = None,
-#     ):
-#         super().__init__(midi_file, notes, channel)
-
-#         self.object = bpy.data.objects[object_name]
-#         self.object_property = object_property
-#         self.min_position = min_position
-#         self.max_position = max_position
-
-#         self.object.animation_data_clear()
-
-#     def generate_keyframes(self):
-#         events = self.midi_events()
-#         fps = bpy.context.scene.render.fps
-#         obj = self.object
-#         prop = self.object_property
-#         keyframe_prop = prop.split(".")[0]
-#         min = self.min_position
-#         max = self.max_position
-
-#         first_frame = True
-
-#         for i, e in enumerate(events):
-#             next_event = events[i + 1] if i + 1 < len(events) else None
-#             start = e["start"] * fps
-#             duration = e["duration"] * fps
-#             velocity_scale = 1 + (1 - e["velocity"]) * 1.5
-
-#             note = e["note"]
-#             position = min + (note / 127) * (max - min)
-
-#             if first_frame:
-#                 first_frame = False
-
-#                 set_prop(obj, prop, min + (63.5 / 127) * (max - min))
-#                 obj.keyframe_insert(
-#                     data_path=keyframe_prop,
-#                     frame=start - (duration * velocity_scale)
-#                 )
-
-#             if next_event:
-#                 set_prop(obj, prop, position)
-#                 obj.keyframe_insert(
-#                     data_path=keyframe_prop,
-#                     frame=start
-#                 )
-
-#                 # hold position ~until next event
-#                 obj.keyframe_insert(
-#                     data_path=keyframe_prop,
-#                     frame=(next_event["start"] * fps) - (duration * 0.5)
-#                 )
-#             else:
-#                 set_prop(obj, prop, min + (63.5 / 127) * (max - min))
-#                 obj.keyframe_insert(
-#                     data_path=keyframe_prop,
-#                     frame=start + (duration * velocity_scale)
-#                 )
+            # move arm to default positions after
+            if note.is_last():
+                for arm, origin in arm_objects.items():
+                    arm.location = origin[0]
+                    arm.rotation_euler = origin[1]
+                    arm.keyframe_insert(
+                        data_path="location",
+                        frame=end + return_duration
+                    )
+                    arm.keyframe_insert(
+                        data_path="rotation_euler",
+                        frame=end + return_duration
+                    )

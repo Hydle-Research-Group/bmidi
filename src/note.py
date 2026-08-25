@@ -13,6 +13,8 @@ class MidiNote:
         self._duration = duration
         self._note = note
         self._velocity = velocity
+        self._first = False
+        self._last = False
 
     def start(self) -> float:
         """
@@ -48,3 +50,17 @@ class MidiNote:
         """
 
         return self._velocity
+
+    def is_first(self) -> bool:
+        """
+        Returns if the note occurs first.
+        """
+
+        return self._first
+
+    def is_last(self) -> bool:
+        """
+        Returns if the note occurs first.
+        """
+
+        return self._last
