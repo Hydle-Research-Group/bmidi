@@ -171,9 +171,14 @@ class BaseController(Controller):
 
 class RoboticController(Controller):
     """
-    A robotic controller that key-frames a set of arm effectors dynamically based on MIDI data.
+    A robotic controller that key-frames a set of effectors dynamically based on MIDI data.
 
-
+    - `effectors`: a list of `Effector` objects
+    - `target_prefix`: the target object prefix
+    - `midi_file`: a valid path to a midi file
+    - `events`: a list of `Event` objects
+    - `notes`: a list of integers (MIDI notes 0-127)
+    - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
     """
 
     def __init__(
