@@ -1,21 +1,30 @@
 from bpy.types import Object
-import imp
+
+
 def initialize():
-    import sys
     import importlib
+    import sys
     from pathlib import Path
 
     ROOT = Path(__file__).resolve().parents[1]
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
 
-    import src.note
-    import src.event
-    import src.controller
+    import src.engine.controller
+    import src.engine.effector
+    import src.engine.event
+    import src.engine.helpers
+    import src.engine.note
+    import src.ui.controllers
+    import src.ui.robotic_systems
 
-    importlib.reload(src.note)
-    importlib.reload(src.event)
-    importlib.reload(src.controller)
+    importlib.reload(src.engine.note)
+    importlib.reload(src.engine.event)
+    importlib.reload(src.engine.effector)
+    importlib.reload(src.ui.robotic_systems)
+    importlib.reload(src.ui.controllers)
+    importlib.reload(src.engine.controller)
+
 
 initialize()
 
@@ -26,48 +35,30 @@ bl_info = {
     "blender": (5, 0, 0),
     "location": "3D Viewport > Sidebar > bmidi",
     "description": "Automatic MIDI-data keyframing for Blender objects",
-    "category": "Development"
+    "category": "Development",
 }
 
-import mido
-import bpy
 import math
-from collections import defaultdict
-from src.event import Event, EventTrigger
-from src.controller import BaseController
 
-def get_midi_channel_ranges(midi_path: str):
-    ranges = defaultdict(lambda: [127, 0])
+import bpy
 
-    try:
-        mid = mido.MidiFile(midi_path)
-    except Exception:
-        return {}
+from src.engine.controller import BaseController, RoboticController
+from src.engine.effector import Effector
+from src.engine.event import Event
+from src.engine.helpers import get_midi_channel_ranges
+from src.ui.controllers import (
+    BMIDI_Controller,
+    BMIDI_Event,
+    BMIDI_UL_controller_events,
+    BMIDI_UL_controllers,
+)
+from src.ui.robotic_systems import (
+    BMIDI_Robotic_Effector,
+    BMIDI_Robotic_System,
+    BMIDI_UL_robotic_effectors,
+    BMIDI_UL_robotic_systems,
+)
 
-    for track in mid.tracks:
-        for msg in track:
-            if msg.type == "note_on" and msg.velocity > 0:
-                ch = msg.channel + 1  # mido is 0–15
-                ranges[ch][0] = min(ranges[ch][0], msg.note)
-                ranges[ch][1] = max(ranges[ch][1], msg.note)
-
-    # Remove unused channels
-    return {
-        ch: (mn, mx)
-        for ch, (mn, mx) in ranges.items()
-        if mn <= mx
-    }
-
-def get_channel_items(_, context):
-    scene = context.scene
-
-    if scene.bmidi_midi_file:
-        channels = get_midi_channel_ranges(scene.bmidi_midi_file)
-
-        if channels:
-            return [(str(ch), str(ch), "") for ch in sorted(channels)]
-
-    return []
 
 def process_note_list(expr: str) -> list[int]:
     notes = []
@@ -81,123 +72,10 @@ def process_note_list(expr: str) -> list[int]:
 
     return notes
 
-class BMIDI_Event(bpy.types.PropertyGroup):
-    time: bpy.props.FloatProperty(
-        name="Time",
-        description="Time in seconds relative to the MIDI note",
-        default=0.0,
-        soft_min=0.0,
-    )
-    trigger: bpy.props.EnumProperty(
-        name="Trigger",
-        items=[
-            (
-                EventTrigger.BeforeStart,
-                "Before MIDI Note Starts",
-                "Execute this event before the MIDI note starts",
-            ),
-            (
-                EventTrigger.AfterStart,
-                "After MIDI Note Starts",
-                "Execute this event after the MIDI note starts",
-            ),
-            (
-                EventTrigger.BeforeEnd,
-                "Before MIDI Note Ends",
-                "Execute this event before the MIDI note ends",
-            ),
-            (
-                EventTrigger.AfterEnd,
-                "After MIDI Note Ends",
-                "Execute this event after the MIDI note ends",
-            ),
-        ],
-        default=EventTrigger.BeforeStart,
-    )
-    action: bpy.props.EnumProperty(
-        name="Action",
-        items=[
-            ("location.x", "Move X", ""),
-            ("location.y", "Move Y", ""),
-            ("location.z", "Move Z", ""),
-            ("rotation_euler.x", "Rotate X", ""),
-            ("rotation_euler.y", "Rotate Y", ""),
-            ("rotation_euler.z", "Rotate Z", ""),
-            ("scale.x", "Scale X", ""),
-            ("scale.y", "Scale Y", ""),
-            ("scale.z", "Scale Z", ""),
-            ("data.energy", "Power Light", "Applies only to light objects"),
-            ("data.spot_size", "Angle Spotlight", "Applies only to spot light objects"),
-        ],
-    )
-    amount: bpy.props.FloatProperty(
-        name="Amount",
-        description="Number of units the action completes",
-        default=0.0,
-    )
-
-class BMIDI_Item(bpy.types.PropertyGroup):
-    enabled: bpy.props.BoolProperty(
-        name="Enabled",
-        description="Generate keyframes for this item",
-        default=True
-    )
-    object_prefix: bpy.props.StringProperty(name="Object Prefix")
-    note_range_start: bpy.props.IntProperty(
-        name="Note Range Start",
-        min=0,
-        max=127,
-        default=0
-    )
-    note_range_end: bpy.props.IntProperty(
-        name="Note Range End",
-        min=0,
-        max=127,
-        default=127
-    )
-    use_block_list: bpy.props.BoolProperty(
-        name="Use Block List",
-        description="Block certain notes from being key-framed",
-        default=False
-    )
-    blocked_notes: bpy.props.StringProperty(
-        name="Blocked Notes",
-        description="Comma separated MIDI notes",
-        default=""
-    )
-    channel: bpy.props.EnumProperty(
-        name="Channel",
-        items=get_channel_items,
-    )
-    events: bpy.props.CollectionProperty(
-        type=BMIDI_Event,
-    )
-    active_event: bpy.props.IntProperty(
-        default=0,
-    )
-
-class BMIDI_UL_items(bpy.types.UIList):
-    def draw_item(
-        self, context, layout, data, item, icon,
-        active_data, active_propname, index
-    ):
-        row = layout.row(align=True)
-        row.prop(item, "object_prefix", text="", emboss=False, icon="SOUND")
-        row.prop(item, "enabled", text="")
-
-class BMIDI_UL_item_events(bpy.types.UIList):
-    def draw_item(
-        self, context, layout, data, item, icon,
-        active_data, active_propname, index
-    ):
-        row = layout.row(align=True)
-        row.prop(item, "time", text="")
-        row.prop(item, "trigger", text="")
-        row.prop(item, "action", text="")
-        row.prop(item, "amount", text="")
 
 class VIEW_3D_OT_add_item(bpy.types.Operator):
     """Add a new item"""
+
     bl_idname = "bmidi_items.add_item"
     bl_label = "Add Item"
 
@@ -205,10 +83,12 @@ class VIEW_3D_OT_add_item(bpy.types.Operator):
         context.scene.bmidi_items.add()
         context.scene.bmidi_active_item = len(context.scene.bmidi_items) - 1
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_remove_item(bpy.types.Operator):
     """Remove the selected item"""
+
     bl_idname = "bmidi_items.remove_item"
     bl_label = "Remove Item"
 
@@ -217,10 +97,12 @@ class VIEW_3D_OT_remove_item(bpy.types.Operator):
         context.scene.bmidi_items.remove(idx)
         context.scene.bmidi_active_item = max(0, idx - 1)
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
     """Duplicate the selected item"""
+
     bl_idname = "bmidi_items.duplicate_item"
     bl_label = "Duplicate Item"
 
@@ -229,7 +111,7 @@ class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
         idx = context.scene.bmidi_active_item
 
         if idx < 0 or idx >= len(items):
-            return {'CANCELLED'}
+            return {"CANCELLED"}
 
         src = items[idx]
 
@@ -241,11 +123,7 @@ class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
             if prop.identifier in {"rna_type", "events"}:
                 continue
 
-            setattr(
-                dst,
-                prop.identifier,
-                getattr(src, prop.identifier)
-            )
+            setattr(dst, prop.identifier, getattr(src, prop.identifier))
 
         # copy events
         for src_event in src.events:
@@ -255,11 +133,8 @@ class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
                 if prop.identifier == "rna_type":
                     continue
 
-                setattr(
-                    dst_event,
-                    prop.identifier,
-                    getattr(src_event, prop.identifier)
-                )
+                setattr(dst_event, prop.identifier, getattr(src_event, prop.identifier))
+
         dst.object_prefix = f"{src.object_prefix} (COPY)"
         items.move(len(items) - 1, idx + 1)
         context.scene.bmidi_active_item = idx + 1
@@ -267,10 +142,12 @@ class VIEW_3D_OT_duplicate_item(bpy.types.Operator):
         if len(dst.events) > 0:
             dst.active_event = 0
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_add_event(bpy.types.Operator):
     """Add a new event"""
+
     bl_idname = "bmidi_items.add_event"
     bl_label = "Add Event"
 
@@ -281,10 +158,12 @@ class VIEW_3D_OT_add_event(bpy.types.Operator):
         item.events.add()
         item.active_event = len(item.events) - 1
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_remove_event(bpy.types.Operator):
     """Remove the selected event"""
+
     bl_idname = "bmidi_items.remove_event"
     bl_label = "Remove Event"
 
@@ -295,19 +174,18 @@ class VIEW_3D_OT_remove_event(bpy.types.Operator):
         idx = item.active_event
 
         if idx < 0 or idx >= len(item.events):
-            return {'CANCELLED'}
+            return {"CANCELLED"}
 
         item.events.remove(idx)
 
-        item.active_event = min(
-            idx,
-            max(0, len(item.events) - 1)
-        )
+        item.active_event = min(idx, max(0, len(item.events) - 1))
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_move_event_up(bpy.types.Operator):
     """Move the selected event up the list"""
+
     bl_idname = "bmidi_items.move_event_up"
     bl_label = "Move Event Up"
 
@@ -319,15 +197,17 @@ class VIEW_3D_OT_move_event_up(bpy.types.Operator):
         new = idx - 1
 
         if new < 0:
-            return {'CANCELLED'}
+            return {"CANCELLED"}
 
         item.events.move(idx, new)
         item.active_event = new
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_move_event_down(bpy.types.Operator):
     """Move the selected event down the list"""
+
     bl_idname = "bmidi_items.move_event_down"
     bl_label = "Move Event Down"
 
@@ -339,15 +219,17 @@ class VIEW_3D_OT_move_event_down(bpy.types.Operator):
         new = idx + 1
 
         if new >= len(item.events):
-            return {'CANCELLED'}
+            return {"CANCELLED"}
 
         item.events.move(idx, new)
         item.active_event = new
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_duplicate_event(bpy.types.Operator):
     """Duplicate the selected event"""
+
     bl_idname = "bmidi_items.duplicate_event"
     bl_label = "Duplicate Event"
 
@@ -359,7 +241,7 @@ class VIEW_3D_OT_duplicate_event(bpy.types.Operator):
         idx = item.active_event
 
         if idx < 0 or idx >= len(events):
-            return {'CANCELLED'}
+            return {"CANCELLED"}
 
         src = events[idx]
 
@@ -376,12 +258,207 @@ class VIEW_3D_OT_duplicate_event(bpy.types.Operator):
 
         item.active_event = idx + 1
 
-        return {'FINISHED'}
+        return {"FINISHED"}
+
+
+class BMIDI_OT_add_robotic_system(bpy.types.Operator):
+    """Add a new robotic system"""
+
+    bl_idname = "bmidi_robotic_systems.add"
+    bl_label = "Add Robotic System"
+
+    def execute(self, context):
+        scene = context.scene
+
+        system = scene.bmidi_robotic_systems.add()
+        system.target_prefix = f"System {len(scene.bmidi_robotic_systems)}"
+
+        scene.bmidi_active_system = len(scene.bmidi_robotic_systems) - 1
+
+        return {"FINISHED"}
+
+
+class BMIDI_OT_remove_robotic_system(bpy.types.Operator):
+    """Remove the selected robotic system"""
+
+    bl_idname = "bmidi_robotic_systems.remove"
+    bl_label = "Remove Robotic System"
+
+    def execute(self, context):
+        scene = context.scene
+
+        systems = scene.bmidi_robotic_systems
+        idx = scene.bmidi_active_system
+
+        if idx < 0 or idx >= len(systems):
+            return {"CANCELLED"}
+
+        systems.remove(idx)
+
+        if systems:
+            scene.bmidi_active_system = min(
+                idx,
+                len(systems) - 1,
+            )
+        else:
+            scene.bmidi_active_system = 0
+
+        return {"FINISHED"}
+
+
+class BMIDI_OT_duplicate_robotic_system(bpy.types.Operator):
+    """Duplicate the selected robotic system"""
+
+    bl_idname = "bmidi_robotic_systems.duplicate"
+    bl_label = "Duplicate Robotic System"
+
+    def execute(self, context):
+        scene = context.scene
+        systems = scene.bmidi_robotic_systems
+        idx = scene.bmidi_active_system
+
+        if idx < 0 or idx >= len(systems):
+            return {"CANCELLED"}
+
+        src = systems[idx]
+
+        systems.add()
+        dst = systems[-1]
+
+        for prop in src.bl_rna.properties:
+            if prop.identifier in {
+                "rna_type",
+                "effectors",
+            }:
+                continue
+
+            setattr(
+                dst,
+                prop.identifier,
+                getattr(src, prop.identifier),
+            )
+
+        for src_effector in src.effectors:
+            dst_effector = dst.effectors.add()
+
+            for prop in src_effector.bl_rna.properties:
+                if prop.identifier == "rna_type":
+                    continue
+
+                setattr(
+                    dst_effector,
+                    prop.identifier,
+                    getattr(src_effector, prop.identifier),
+                )
+
+        dst.target_prefix = f"{src.target_prefix} (COPY)"
+
+        systems.move(
+            len(systems) - 1,
+            idx + 1,
+        )
+
+        scene.bmidi_active_system = idx + 1
+
+        if dst.effectors:
+            dst.active_effector = 0
+
+        return {"FINISHED"}
+
+
+class BMIDI_OT_add_robotic_effector(bpy.types.Operator):
+    """Add an effector to the selected robotic system"""
+
+    bl_idname = "bmidi_robotic_effectors.add"
+    bl_label = "Add Effector"
+
+    def execute(self, context):
+        scene = context.scene
+        system = scene.bmidi_robotic_systems[scene.bmidi_active_system]
+
+        system.effectors.add()
+        system.active_effector = len(system.effectors) - 1
+
+        return {"FINISHED"}
+
+
+class BMIDI_OT_remove_robotic_effector(bpy.types.Operator):
+    """Remove the selected effector"""
+
+    bl_idname = "bmidi_robotic_effectors.remove"
+    bl_label = "Remove Effector"
+
+    def execute(self, context):
+        scene = context.scene
+
+        system = scene.bmidi_robotic_systems[scene.bmidi_active_system]
+        idx = system.active_effector
+
+        system.effectors.remove(idx)
+
+        if system.effectors:
+            system.active_effector = min(
+                idx,
+                len(system.effectors) - 1,
+            )
+        else:
+            system.active_effector = 0
+
+        return {"FINISHED"}
+
+
+class BMIDI_OT_duplicate_robotic_effector(bpy.types.Operator):
+    """Duplicate the selected effector"""
+
+    bl_idname = "bmidi_robotic_effectors.duplicate"
+    bl_label = "Duplicate Effector"
+
+    def execute(self, context):
+        scene = context.scene
+        systems = scene.bmidi_robotic_systems
+
+        system_idx = scene.bmidi_active_system
+
+        if system_idx < 0 or system_idx >= len(systems):
+            return {"CANCELLED"}
+
+        system = systems[system_idx]
+
+        idx = system.active_effector
+
+        if idx < 0 or idx >= len(system.effectors):
+            return {"CANCELLED"}
+
+        src = system.effectors[idx]
+
+        system.effectors.add()
+        dst = system.effectors[-1]
+
+        for prop in src.bl_rna.properties:
+            if prop.identifier == "rna_type":
+                continue
+
+            setattr(
+                dst,
+                prop.identifier,
+                getattr(src, prop.identifier),
+            )
+
+        system.effectors.move(
+            len(system.effectors) - 1,
+            idx + 1,
+        )
+
+        system.active_effector = idx + 1
+
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
     """
     Clears object animation data and generates the keyframes for all items
     """
+
     bl_idname = "bmidi.generate_keyframes"
     bl_label = "Generate Keyframes"
 
@@ -390,8 +467,8 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
         midi_file = context.scene.bmidi_midi_file
 
         if not midi_file:
-            self.report({'ERROR'}, "No MIDI file selected")
-            return {'CANCELLED'}
+            self.report({"ERROR"}, "No MIDI file selected")
+            return {"CANCELLED"}
 
         for item in context.scene.bmidi_items:
             if not item.enabled:
@@ -400,26 +477,73 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
             events = []
 
             for e in item.events:
-                needs_radians = True if e.action in ("rotation_euler.x", "rotation_euler.y", "rotation_euler.z", "data.spot_size") else False
+                needs_radians = e.action in (
+                    "rotation_euler.x",
+                    "rotation_euler.y",
+                    "rotation_euler.z",
+                    "data.spot_size",
+                )
 
-                events.append(Event(e.time, True if e.trigger == "BEFORE" else False, e.action, math.radians(e.amount) if needs_radians else e.amount))
+                events.append(
+                    Event(
+                        e.time,
+                        e.trigger,
+                        e.action,
+                        math.radians(e.amount) if needs_radians else e.amount,
+                    )
+                )
 
             channel = int(item.channel) - 1
 
             note_start = item.note_range_start
-            note_end = item.note_range_end + 1 # 0 - 128
-            blocked_notes = process_note_list(item.blocked_notes) if item.use_block_list else []
+            note_end = item.note_range_end + 1  # 0 - 128
+            blocked_notes = (
+                process_note_list(item.blocked_notes) if item.use_block_list else []
+            )
             notes = [i for i in range(note_start, note_end) if i not in blocked_notes]
 
-            controller = BaseController(item.object_prefix, midi_file, events, notes, channel)
+            controller = BaseController(
+                item.object_prefix, midi_file, events, notes, channel
+            )
             controller.generate_keyframes()
 
-        return {'FINISHED'}
+        for system in context.scene.bmidi_robotic_systems:
+            note_start = system.note_range_start
+            note_end = system.note_range_end + 1
+
+            blocked_notes = (
+                process_note_list(system.blocked_notes) if system.use_block_list else []
+            )
+
+            notes = [i for i in range(note_start, note_end) if i not in blocked_notes]
+
+            channel = int(system.channel) - 1
+
+            controller = RoboticController(
+                [
+                    Effector(
+                        e.effector_object,
+                        e.move_duration,
+                        e.return_duration,
+                        e.lift_amount,
+                    )
+                    for e in system.effectors
+                ],
+                system.target_prefix,
+                midi_file,
+                notes=notes,
+                channel=channel,
+            )
+            controller.generate_keyframes()
+
+        return {"FINISHED"}
+
 
 class VIEW_3D_OT_rename_selected(bpy.types.Operator):
     """
     Renames the selected items to the criteria specified
     """
+
     bl_idname = "bmidi.rename_selected"
     bl_label = "Rename Selected"
 
@@ -437,18 +561,21 @@ class VIEW_3D_OT_rename_selected(bpy.types.Operator):
         elif rename_type == "scale_smallest":
             obj_list.sort(key=lambda o: (o.scale.x, o.scale.y, o.location.z))
         elif rename_type == "scale_biggest":
-            obj_list.sort(key=lambda o: (o.scale.x, o.scale.y, o.location.z), reverse=True)
+            obj_list.sort(
+                key=lambda o: (o.scale.x, o.scale.y, o.location.z), reverse=True
+            )
 
         for note, obj in zip(notes, obj_list):
             obj.name = f"{prefix}{note}"
 
-        return {'FINISHED'}
+        return {"FINISHED"}
 
-class VIEW_3D_PT_bmidi_panel(bpy.types.Panel):
+
+class VIEW_3D_PT_bmidi_selector_panel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "bmidi"
-    bl_label = "bmidi"
+    bl_label = "MIDI File"
 
     def draw(self, context):
         layout = self.layout
@@ -474,14 +601,20 @@ class VIEW_3D_PT_bmidi_panel(bpy.types.Panel):
         else:
             box.label(text="No midi file selected")
 
+
+class VIEW_3D_PT_bmidi_control_panel(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "bmidi"
+    bl_label = "Controllers"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
         row = layout.row()
         row.template_list(
-            "BMIDI_UL_items",
-            "",
-            scene,
-            "bmidi_items",
-            scene,
-            "bmidi_active_item"
+            "BMIDI_UL_controllers", "", scene, "bmidi_items", scene, "bmidi_active_item"
         )
 
         col = row.column(align=True)
@@ -497,12 +630,7 @@ class VIEW_3D_PT_bmidi_panel(bpy.types.Panel):
 
             row = layout.row()
             row.template_list(
-                "BMIDI_UL_item_events",
-                "",
-                item,
-                "events",
-                item,
-                "active_event"
+                "BMIDI_UL_controller_events", "", item, "events", item, "active_event"
             )
 
             col = row.column(align=True)
@@ -521,91 +649,216 @@ class VIEW_3D_PT_bmidi_panel(bpy.types.Panel):
             if item.use_block_list:
                 layout.prop(item, "blocked_notes")
 
-
             layout.separator()
             layout.prop(item, "channel")
 
-        layout.separator()
-        layout.operator("bmidi.generate_keyframes", icon="MODIFIER")
 
-class VIEW_3D_PT_bmidi_rename_panel(bpy.types.Panel):
+class VIEW_3D_PT_bmidi_robotic_panel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
     bl_category = "bmidi"
-    bl_label = "bmidi Rename™"
+    bl_label = "Robotics"
 
     def draw(self, context):
         layout = self.layout
         scene = context.scene
 
-        layout.prop(scene, "bmidi_rename_prefix")
-        layout.prop(scene, "bmidi_rename_type")
-        layout.prop(scene, "bmidi_rename_notes")
+        box = layout.box()
 
-        layout.separator()
-        layout.operator("bmidi.rename_selected", icon="TEXT")
+        header = box.row()
+        header.label(
+            text="Robotic Systems",
+            icon="ARMATURE_DATA",
+        )
+
+        row = box.row()
+        row.template_list(
+            "BMIDI_UL_robotic_systems",
+            "",
+            scene,
+            "bmidi_robotic_systems",
+            scene,
+            "bmidi_active_system",
+            rows=3,
+        )
+
+        col = row.column(align=True)
+        col.operator("bmidi_robotic_systems.add", icon="ADD", text="")
+        col.operator("bmidi_robotic_systems.remove", icon="REMOVE", text="")
+        col.separator()
+        col.operator("bmidi_robotic_systems.duplicate", icon="DUPLICATE", text="")
+
+        if scene.bmidi_robotic_systems:
+            system = scene.bmidi_robotic_systems[scene.bmidi_active_system]
+
+            box = box.box()
+            box.label(text="Note Controls")
+            box.prop(system, "note_range_start")
+            box.prop(system, "note_range_end")
+            box.prop(system, "use_block_list")
+
+            if system.use_block_list:
+                box.prop(system, "blocked_notes")
+
+            box.prop(system, "channel")
+
+            box = layout.box()
+            box.label(text="System Effectors", icon="CONSTRAINT")
+
+            row = box.row()
+            row.template_list(
+                "BMIDI_UL_robotic_effectors",
+                "",
+                system,
+                "effectors",
+                system,
+                "active_effector",
+            )
+
+            col = row.column(align=True)
+            col.operator("bmidi_robotic_effectors.add", icon="ADD", text="")
+            col.operator("bmidi_robotic_effectors.remove", icon="REMOVE", text="")
+            col.separator()
+            col.operator("bmidi_robotic_effectors.duplicate", icon="DUPLICATE", text="")
+
+            if system.effectors:
+                effector = system.effectors[system.active_effector]
+
+                box = box.box()
+                box.label(text="Effector Options")
+
+                box.prop(effector, "move_duration")
+                box.prop(effector, "return_duration")
+                box.prop(effector, "lift_amount")
+
+
+class VIEW_3D_PT_bmidi_rename_panel(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "bmidi"
+    bl_label = "Rename Tool"
+
+    def draw(self, context):
+        layout = self.layout
+        scene = context.scene
+
+        box = layout.box()
+
+        box.prop(scene, "bmidi_rename_prefix")
+        box.prop(scene, "bmidi_rename_type")
+        box.prop(scene, "bmidi_rename_notes")
+
+        box.separator()
+        box.operator("bmidi.rename_selected", icon="TEXT")
+
+
+class VIEW_3D_PT_bmidi_animation_panel(bpy.types.Panel):
+    bl_space_type = "VIEW_3D"
+    bl_region_type = "UI"
+    bl_category = "bmidi"
+    bl_label = "Animation"
+
+    def draw(self, context):
+        layout = self.layout
+
+        box = layout.box()
+        box.operator("bmidi.generate_keyframes", icon="MODIFIER")
+
+
+classes = (
+    BMIDI_Event,
+    BMIDI_Controller,
+    BMIDI_Robotic_Effector,
+    BMIDI_Robotic_System,
+    BMIDI_UL_controllers,
+    BMIDI_UL_controller_events,
+    BMIDI_UL_robotic_systems,
+    BMIDI_UL_robotic_effectors,
+    VIEW_3D_PT_bmidi_selector_panel,
+    VIEW_3D_PT_bmidi_control_panel,
+    VIEW_3D_PT_bmidi_robotic_panel,
+    VIEW_3D_PT_bmidi_rename_panel,
+    VIEW_3D_PT_bmidi_animation_panel,
+    VIEW_3D_OT_add_item,
+    VIEW_3D_OT_add_event,
+    VIEW_3D_OT_remove_item,
+    VIEW_3D_OT_remove_event,
+    VIEW_3D_OT_move_event_up,
+    VIEW_3D_OT_move_event_down,
+    VIEW_3D_OT_duplicate_item,
+    VIEW_3D_OT_duplicate_event,
+    BMIDI_OT_add_robotic_system,
+    BMIDI_OT_remove_robotic_system,
+    BMIDI_OT_duplicate_robotic_system,
+    BMIDI_OT_add_robotic_effector,
+    BMIDI_OT_remove_robotic_effector,
+    BMIDI_OT_duplicate_robotic_effector,
+    VIEW_3D_OT_generate_keyframes,
+    VIEW_3D_OT_rename_selected,
+)
+
 
 def register():
-    bpy.utils.register_class(BMIDI_Event)
-    bpy.utils.register_class(BMIDI_Item)
-    bpy.utils.register_class(BMIDI_UL_items)
-    bpy.utils.register_class(BMIDI_UL_item_events)
+    for cls in classes:
+        bpy.utils.register_class(cls)
 
-    # item config
     bpy.types.Scene.bmidi_items = bpy.props.CollectionProperty(
-        type=BMIDI_Item
+        type=BMIDI_Controller,
     )
-    bpy.types.Scene.bmidi_active_item = bpy.props.IntProperty()
+    bpy.types.Scene.bmidi_active_item = bpy.props.IntProperty(
+        default=0,
+    )
+    bpy.types.Scene.bmidi_robotic_systems = bpy.props.CollectionProperty(
+        type=BMIDI_Robotic_System,
+    )
+    bpy.types.Scene.bmidi_active_system = bpy.props.IntProperty(
+        default=0,
+    )
+
     bpy.types.Scene.bmidi_midi_file = bpy.props.StringProperty(
         name="MIDI File",
         subtype="FILE_PATH",
     )
-
-    # rename elements
     bpy.types.Scene.bmidi_rename_prefix = bpy.props.StringProperty(
         name="Object Prefix",
     )
+
     bpy.types.Scene.bmidi_rename_type = bpy.props.EnumProperty(
         name="Rename Type",
         items=[
-            ("location_smallest", "Location (Smallest -> Biggest)", "Rename items based on their location (smallest to biggest)"),
-            ("location_biggest", "Location (Biggest -> Smallest)", "Rename items based on their location (biggest to smallest)"),
-            ("scale_smallest", "Scale (Smallest -> Biggest)", "Rename items based on their scale (smallest to biggest)"),
-            ("scale_biggest", "Scale (Biggest -> Smallest)", "Rename items based on their scale (biggest to smallest)"),
-        ]
+            (
+                "location_smallest",
+                "Location (Smallest -> Biggest)",
+                "Rename items based on their location (smallest to biggest)",
+            ),
+            (
+                "location_biggest",
+                "Location (Biggest -> Smallest)",
+                "Rename items based on their location (biggest to smallest)",
+            ),
+            (
+                "scale_smallest",
+                "Scale (Smallest -> Biggest)",
+                "Rename items based on their scale (smallest to biggest)",
+            ),
+            (
+                "scale_biggest",
+                "Scale (Biggest -> Smallest)",
+                "Rename items based on their scale (biggest to smallest)",
+            ),
+        ],
     )
+
     bpy.types.Scene.bmidi_rename_notes = bpy.props.StringProperty(
         name="Rename To Notes",
         description="Comma separated MIDI notes",
     )
 
-    bpy.utils.register_class(VIEW_3D_PT_bmidi_panel)
-    bpy.utils.register_class(VIEW_3D_PT_bmidi_rename_panel)
-    bpy.utils.register_class(VIEW_3D_OT_add_item)
-    bpy.utils.register_class(VIEW_3D_OT_add_event)
-    bpy.utils.register_class(VIEW_3D_OT_remove_item)
-    bpy.utils.register_class(VIEW_3D_OT_remove_event)
-    bpy.utils.register_class(VIEW_3D_OT_move_event_up)
-    bpy.utils.register_class(VIEW_3D_OT_move_event_down)
-    bpy.utils.register_class(VIEW_3D_OT_duplicate_item)
-    bpy.utils.register_class(VIEW_3D_OT_duplicate_event)
-    bpy.utils.register_class(VIEW_3D_OT_generate_keyframes)
-    bpy.utils.register_class(VIEW_3D_OT_rename_selected)
 
 def unregister():
-    bpy.utils.unregister_class(BMIDI_UL_items)
-    bpy.utils.unregister_class(VIEW_3D_PT_bmidi_panel)
-    bpy.utils.unregister_class(VIEW_3D_PT_bmidi_rename_panel)
-    bpy.utils.unregister_class(VIEW_3D_OT_add_item)
-    bpy.utils.unregister_class(VIEW_3D_OT_add_event)
-    bpy.utils.unregister_class(VIEW_3D_OT_remove_item)
-    bpy.utils.unregister_class(VIEW_3D_OT_remove_event)
-    bpy.utils.unregister_class(VIEW_3D_OT_move_event_up)
-    bpy.utils.unregister_class(VIEW_3D_OT_move_event_down)
-    bpy.utils.unregister_class(VIEW_3D_OT_duplicate_item)
-    bpy.utils.unregister_class(VIEW_3D_OT_duplicate_event)
-    bpy.utils.unregister_class(VIEW_3D_OT_generate_keyframes)
-    bpy.utils.unregister_class(VIEW_3D_OT_rename_selected)
+    for cls in reversed(classes):
+        bpy.utils.unregister_class(cls)
+
 
 if __name__ == "__main__":
     register()

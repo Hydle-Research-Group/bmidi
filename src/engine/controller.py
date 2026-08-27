@@ -1,18 +1,23 @@
-import mido
 import bpy
-from mathutils import Vector
+import mido
 from bpy.types import Object
-from src.event import Event, EventTrigger
-from src.note import MidiNote
+from mathutils import Vector
+
+from src.engine.effector import Effector
+from src.engine.event import Event, EventTrigger
+from src.engine.note import MidiNote
+
 
 def get_prop(obj, prop_path: str):
     root, attr = prop_path.split(".")
     return getattr(getattr(obj, root), attr)
 
+
 def set_prop(obj, prop_path: str, value):
     root, attr = prop_path.split(".")
     container = getattr(obj, root)
     setattr(container, attr, value)
+
 
 class Controller:
     """
@@ -23,14 +28,21 @@ class Controller:
     - `allowed_notes`: a list of integers (MIDI numbers 0-127) that the controller is allowed to generate
     - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
     """
-    def __init__(self, midi_file: str, events: list[Event] = [], allowed_notes: list[int] = [], channel: int | None = None):
+
+    def __init__(
+        self,
+        midi_file: str,
+        events: list[Event] = [],
+        allowed_notes: list[int] = [],
+        channel: int | None = None,
+    ):
         self._notes = []
         self._events = events
         self._allowed_notes = allowed_notes
 
         midi = mido.MidiFile(midi_file)
         current_time = 0.0
-        active_notes = {} # start_time, velocity
+        active_notes = {}  # start_time, velocity
 
         for msg in midi:
             current_time += msg.time
@@ -42,7 +54,10 @@ class Controller:
                 if channel is not None and msg.channel != channel:
                     continue
 
-                active_notes[(msg.note, msg.channel)] = ( current_time, msg.velocity / 127.0 )
+                active_notes[(msg.note, msg.channel)] = (
+                    current_time,
+                    msg.velocity / 127.0,
+                )
 
             elif msg.type in ("note_off", "note_on") and msg.velocity == 0:
                 if msg.note not in allowed_notes:
@@ -55,7 +70,11 @@ class Controller:
                 if key in active_notes:
                     start_time, velocity = active_notes.pop(key)
 
-                    self._notes.append(MidiNote(start_time, current_time - start_time, msg.note, velocity))
+                    self._notes.append(
+                        MidiNote(
+                            start_time, current_time - start_time, msg.note, velocity
+                        )
+                    )
 
         # first/last setting
         self._notes[0]._first = True
@@ -89,6 +108,7 @@ class Controller:
 
         pass
 
+
 class BaseController(Controller):
     """
     A base controller that key-frames a set of animation events based on MIDI data.
@@ -99,7 +119,15 @@ class BaseController(Controller):
     - `notes`: a list of integers (MIDI notes 0-127)
     - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
     """
-    def __init__(self, object_prefix: str, midi_file: str, events: list[Event] = [], notes: list[int] = [], channel: int | None = None):
+
+    def __init__(
+        self,
+        object_prefix: str,
+        midi_file: str,
+        events: list[Event] = [],
+        notes: list[int] = [],
+        channel: int | None = None,
+    ):
         super().__init__(midi_file, events, notes, channel)
 
         self.object_prefix = object_prefix
@@ -138,33 +166,45 @@ class BaseController(Controller):
                     frame = start
 
                 set_prop(target, prop, get_prop(target, prop) + amount)
-                target.keyframe_insert(
-                    data_path=keyframe_prop,
-                    frame=frame
-                )
+                target.keyframe_insert(data_path=keyframe_prop, frame=frame)
+
 
 class RoboticController(Controller):
-    def __init__(self, arm_objects: list[str], target_prefix: str, midi_file: str, events: list[Event] = [], notes: list[int] = [], channel: int | None = None):
+    """
+    A robotic controller that key-frames a set of arm effectors dynamically based on MIDI data.
+
+
+    """
+
+    def __init__(
+        self,
+        effectors: list[Effector],
+        target_prefix: str,
+        midi_file: str,
+        events: list[Event] = [],
+        notes: list[int] = [],
+        channel: int | None = None,
+    ):
         super().__init__(midi_file, events, notes, channel)
 
         self.target_prefix = target_prefix
-        self.arm_objects = {}
+        self.effectors = {}
 
-        for name in arm_objects:
-            obj = bpy.data.objects[name]
+        for e in effectors:
+            obj = e.object()
             obj.animation_data_clear()
 
-            self.arm_objects[obj] = (obj.location.copy(), obj.rotation_euler.copy())
+            self.effectors[obj] = (
+                obj.location.copy(),
+                obj.rotation_euler.copy(),
+                e,
+            )
 
     def generate_keyframes(self):
         target_prefix = self.target_prefix
-        arm_objects = self.arm_objects
+        effectors = self.effectors
         fps = bpy.context.scene.render.fps
         notes = self.notes()
-
-        pre_move_duration = 0.1 * fps
-        return_duration = 2.0 * fps
-        lift = 0.1
 
         for i, note in enumerate(notes):
             target = bpy.data.objects[f"{target_prefix}{note.note()}"]
@@ -176,81 +216,77 @@ class RoboticController(Controller):
             normal = target.matrix_world.to_3x3() @ Vector((0, 0, 1))
             normal.normalize()
 
-            # locations
+            # hit + target locations
             hit_location = target.location.copy()
             target_rotation = target.rotation_euler.copy()
-            approach_location = hit_location + normal * lift
 
             # move arm to default positions before
             if note.is_first():
-                for arm, origin in arm_objects.items():
+                for arm, origin in effectors.items():
+                    return_duration = origin[2].return_duration() * fps
+
                     arm.location = origin[0]
                     arm.rotation_euler = origin[1]
                     arm.keyframe_insert(
-                        data_path="location",
-                        frame=start - pre_move_duration
+                        data_path="location", frame=start - return_duration
                     )
                     arm.keyframe_insert(
-                        data_path="rotation_euler",
-                        frame=start - pre_move_duration
+                        data_path="rotation_euler", frame=start - return_duration
                     )
 
-            candidates = sorted(arm_objects.items(), key=lambda a: (target.location - a[0].location).length)
+            candidates = sorted(
+                effectors.items(),
+                key=lambda a: (target.location - a[0].location).length,
+            )
+            # TODO: clean up candidate/effector logic
             closest = candidates[0][0]
+            move_duration = candidates[0][1][2].move_duration() * fps
+            return_duration = candidates[0][1][2].return_duration() * fps
+            lift = candidates[0][1][2].lift_amount()
+
+            # the approach calculation happens after the initial movement, as we don't know the lift yet
+            approach_location = hit_location + normal * lift
 
             # approach
             closest.location = approach_location
             closest.rotation_euler = target_rotation
+            closest.keyframe_insert(data_path="location", frame=start - move_duration)
             closest.keyframe_insert(
-                data_path="location",
-                frame=start - pre_move_duration
-            )
-            closest.keyframe_insert(
-                data_path="rotation_euler",
-                frame=start - pre_move_duration
+                data_path="rotation_euler", frame=start - move_duration
             )
 
             # hit
             closest.location = hit_location
-            closest.keyframe_insert(
-                data_path="location",
-                frame=start
-            )
+            closest.keyframe_insert(data_path="location", frame=start)
 
             # return to the resting location or lift off the note
             if next_event and next_event.duration() * fps >= return_duration:
-                closest.location = arm_objects[closest][0]
-                closest.rotation_euler = arm_objects[closest][1]
+                closest.location = effectors[closest][0]
+                closest.rotation_euler = effectors[closest][1]
                 closest.keyframe_insert(
-                    data_path="location",
-                    frame=end + return_duration
+                    data_path="location", frame=end + return_duration
                 )
                 closest.keyframe_insert(
-                    data_path="rotation_euler",
-                    frame=end + return_duration
+                    data_path="rotation_euler", frame=end + return_duration
                 )
             else:
                 closest.location = approach_location
-                closest.rotation_euler = arm_objects[closest][1]
+                closest.rotation_euler = effectors[closest][1]
+                closest.keyframe_insert(data_path="location", frame=end + move_duration)
                 closest.keyframe_insert(
-                    data_path="location",
-                    frame=end + pre_move_duration
-                )
-                closest.keyframe_insert(
-                    data_path="rotation_euler",
-                    frame=start + pre_move_duration
+                    data_path="rotation_euler", frame=start + move_duration
                 )
 
             # move arm to default positions after
             if note.is_last():
-                for arm, origin in arm_objects.items():
+                for arm, origin in effectors.items():
+                    return_duration = origin[2].return_duration() * fps
+
                     arm.location = origin[0]
                     arm.rotation_euler = origin[1]
                     arm.keyframe_insert(
-                        data_path="location",
-                        frame=end + return_duration
+                        data_path="location", frame=end + return_duration
                     )
                     arm.keyframe_insert(
-                        data_path="rotation_euler",
-                        frame=end + return_duration
+                        data_path="rotation_euler", frame=end + return_duration
                     )

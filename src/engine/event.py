@@ -16,7 +16,7 @@ class Event:
 
     def time(self) -> float:
         """
-        Returns the relative time of the event (in seconds.)
+        Returns the relative time of the event in seconds.
         """
 
         return self._time
@@ -41,6 +41,7 @@ class Event:
         """
 
         return self._amount
+
 
 class EventTrigger:
     BeforeStart = "BEFORE_START"
