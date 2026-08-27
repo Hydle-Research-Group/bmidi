@@ -612,7 +612,15 @@ class VIEW_3D_PT_bmidi_control_panel(bpy.types.Panel):
         layout = self.layout
         scene = context.scene
 
-        row = layout.row()
+        box = layout.box()
+
+        header = box.row()
+        header.label(
+            text="Controllers",
+            icon="PHYSICS",
+        )
+
+        row = box.row()
         row.template_list(
             "BMIDI_UL_controllers", "", scene, "bmidi_items", scene, "bmidi_active_item"
         )
@@ -626,9 +634,20 @@ class VIEW_3D_PT_bmidi_control_panel(bpy.types.Panel):
         if scene.bmidi_items:
             item = scene.bmidi_items[scene.bmidi_active_item]
 
-            layout.prop(item, "object_prefix", text="Object Prefix")
+            box = box.box()
+            box.label(text="Note Controls")
+            box.prop(item, "note_range_start")
+            box.prop(item, "note_range_end")
+            box.prop(item, "use_block_list")
 
-            row = layout.row()
+            if item.use_block_list:
+                box.prop(item, "blocked_notes")
+
+            box.prop(item, "channel")
+
+            box = layout.box()
+            box.label(text="Events", icon="KEYFRAME_HLT")
+            row = box.row()
             row.template_list(
                 "BMIDI_UL_controller_events", "", item, "events", item, "active_event"
             )
@@ -642,15 +661,16 @@ class VIEW_3D_PT_bmidi_control_panel(bpy.types.Panel):
             col.separator()
             col.operator("bmidi_items.duplicate_event", icon="DUPLICATE", text="")
 
-            layout.prop(item, "note_range_start")
-            layout.prop(item, "note_range_end")
-            layout.prop(item, "use_block_list")
+            if item.events:
+                event = item.events[item.active_event]
 
-            if item.use_block_list:
-                layout.prop(item, "blocked_notes")
+                box = box.box()
+                box.label(text="Event Options")
 
-            layout.separator()
-            layout.prop(item, "channel")
+                box.prop(event, "time")
+                box.prop(event, "trigger")
+                box.prop(event, "action")
+                box.prop(event, "amount")
 
 
 class VIEW_3D_PT_bmidi_robotic_panel(bpy.types.Panel):

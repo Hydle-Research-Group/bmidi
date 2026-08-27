@@ -8,7 +8,7 @@ from src.engine.helpers import get_channel_items
 
 class BMIDI_Event(bpy.types.PropertyGroup):
     time: bpy.props.FloatProperty(
-        name="Time",
+        name="Time (s)",
         description="Time in seconds relative to the MIDI note",
         default=0.0,
         soft_min=0.0,
