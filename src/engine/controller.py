@@ -17,6 +17,50 @@ def set_prop(obj, prop_path: str, value):
     setattr(container, attr, value)
 
 
+def schedule(
+    effectors: list[Effector],
+    target_prefix: str,
+    notes: list[MidiNote],
+) -> list[tuple[Effector, bool]]:
+    """
+    Dynamically builds a list of `Effector` objects corresponding to each note in `notes`.
+    """
+
+    schedules = []
+
+    skip_next = False
+
+    for i, note in enumerate(notes):
+        if skip_next:
+            skip_next = False
+            continue
+
+        start = note.start()
+        target_location = bpy.data.objects[f"{target_prefix}{note.note()}"].location
+        next_event = None if i == len(notes) - 1 else notes[i + 1]
+
+        candidates = sorted(
+            effectors,
+            key=lambda a: (target_location - a.object().location).length,
+        )
+        closest = candidates[0]
+
+        # by default, append the closest target
+        schedules.append((closest, False))
+
+        # if the next event is the same note, pick a candidate and schedule it for that note
+        if (
+            next_event
+            and next_event.note() == note.note()
+            and next_event.start() - start < closest.move_duration()
+            and len(candidates) >= 2
+        ):
+            schedules.append((candidates[1], True))
+            skip_next = True
+
+    return schedules
+
+
 class Controller:
     """
     A controller object.
@@ -164,15 +208,21 @@ class RoboticController(Controller):
                 e,
             )
 
+        self.schedule = schedule(effectors, target_prefix, notes)
+
     def generate_keyframes(self):
         target_prefix = self.target_prefix
         effectors = self.effectors
         notes = self.notes()
         frame_offset = self.frame_offset()
         fps = bpy.context.scene.render.fps
+        schedule = self.schedule
 
         for i, note in enumerate(notes):
-            target = bpy.data.objects[f"{target_prefix}{note.note()}"]
+            effector, alternative_target = schedule[i]
+            target = bpy.data.objects[
+                f"{target_prefix}{note.note()}{'ALT' if alternative_target else ''}"
+            ]
             start = note.start() * fps + frame_offset
             end = note.end() * fps + frame_offset
             next_event = None if i == len(notes) - 1 else notes[i + 1]
@@ -199,46 +249,44 @@ class RoboticController(Controller):
                         data_path="rotation_euler", frame=start - return_duration
                     )
 
-            candidates = sorted(
-                effectors.items(),
-                key=lambda a: (target.location - a[0].location).length,
-            )
-            # TODO: clean up candidate/effector logic
-            closest = candidates[0][0]
-            move_duration = candidates[0][1][2].move_duration() * fps
-            return_duration = candidates[0][1][2].return_duration() * fps
-            lift = candidates[0][1][2].lift_amount()
+            effector_object = effector.object()
+            move_duration = effector.move_duration() * fps
+            return_duration = effector.return_duration() * fps
 
             # the approach calculation happens after the initial movement, as we don't know the lift yet
-            approach_location = hit_location + normal * lift
+            approach_location = hit_location + normal * effector.lift_amount()
 
             # approach
-            closest.location = approach_location
-            closest.rotation_euler = target_rotation
-            closest.keyframe_insert(data_path="location", frame=start - move_duration)
-            closest.keyframe_insert(
+            effector_object.location = approach_location
+            effector_object.rotation_euler = target_rotation
+            effector_object.keyframe_insert(
+                data_path="location", frame=start - move_duration
+            )
+            effector_object.keyframe_insert(
                 data_path="rotation_euler", frame=start - move_duration
             )
 
             # hit
-            closest.location = hit_location
-            closest.keyframe_insert(data_path="location", frame=start)
+            effector_object.location = hit_location
+            effector_object.keyframe_insert(data_path="location", frame=start)
 
             # return to the resting location or lift off the note
             if next_event and next_event.duration() * fps >= return_duration:
-                closest.location = effectors[closest][0]
-                closest.rotation_euler = effectors[closest][1]
-                closest.keyframe_insert(
+                effector_object.location = effectors[effector_object][0]
+                effector_object.rotation_euler = effectors[effector_object][1]
+                effector_object.keyframe_insert(
                     data_path="location", frame=end + return_duration
                 )
-                closest.keyframe_insert(
+                effector_object.keyframe_insert(
                     data_path="rotation_euler", frame=end + return_duration
                 )
             else:
-                closest.location = approach_location
-                closest.rotation_euler = effectors[closest][1]
-                closest.keyframe_insert(data_path="location", frame=end + move_duration)
-                closest.keyframe_insert(
+                effector_object.location = approach_location
+                effector_object.rotation_euler = effectors[effector_object][1]
+                effector_object.keyframe_insert(
+                    data_path="location", frame=end + move_duration
+                )
+                effector_object.keyframe_insert(
                     data_path="rotation_euler", frame=start + move_duration
                 )
 
