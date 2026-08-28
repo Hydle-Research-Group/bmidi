@@ -465,8 +465,9 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
     bl_label = "Generate Keyframes"
 
     def execute(self, context):
-        context.scene.frame_set(-1)
-        midi_file = context.scene.bmidi_midi_file
+        scene = context.scene
+        scene.frame_set(-1)
+        midi_file = scene.bmidi_midi_file
 
         if not midi_file:
             self.report({"ERROR"}, "No MIDI file selected")
@@ -542,6 +543,7 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
                     and i.channel() == channel
                 ],
                 events,
+                frame_offset=scene.bmidi_frame_offset,
             )
             controller.generate_keyframes()
 
@@ -571,6 +573,7 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
                     and i.note() not in blocked_notes
                     and i.channel() == channel
                 ],
+                frame_offset=scene.bmidi_frame_offset,
             )
             controller.generate_keyframes()
 
@@ -818,8 +821,10 @@ class VIEW_3D_PT_bmidi_animation_panel(bpy.types.Panel):
 
     def draw(self, context):
         layout = self.layout
+        scene = context.scene
 
         box = layout.box()
+        box.prop(scene, "bmidi_frame_offset")
         box.operator("bmidi.generate_keyframes", icon="MODIFIER")
 
 
@@ -872,6 +877,12 @@ def register():
     bpy.types.Scene.bmidi_active_system = bpy.props.IntProperty(
         default=0,
     )
+    bpy.types.Scene.bmidi_frame_offset = bpy.props.IntProperty(
+        name="Frame Offset",
+        description="Offset the generated frames by a specified amount",
+        default=0,
+        min=0,
+    )
 
     bpy.types.Scene.bmidi_midi_file = bpy.props.StringProperty(
         name="MIDI File",
@@ -880,7 +891,6 @@ def register():
     bpy.types.Scene.bmidi_rename_prefix = bpy.props.StringProperty(
         name="Object Prefix",
     )
-
     bpy.types.Scene.bmidi_rename_type = bpy.props.EnumProperty(
         name="Rename Type",
         items=[
@@ -906,7 +916,6 @@ def register():
             ),
         ],
     )
-
     bpy.types.Scene.bmidi_rename_notes = bpy.props.StringProperty(
         name="Rename To Notes",
         description="Comma separated MIDI notes",

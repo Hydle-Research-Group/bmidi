@@ -23,15 +23,18 @@ class Controller:
 
     - `notes`: a list of `MidiNote` objects
     - `events`: a list of `Event` objects
+    - `frame_offset`: the relative offset of the generated frames
     """
 
     def __init__(
         self,
         notes: list[MidiNote],
         events: list[Event] = [],
+        frame_offset: int = 0,
     ):
         self._notes = notes
         self._events = events
+        self._frame_offset = frame_offset
 
     def notes(self) -> list[MidiNote]:
         """
@@ -46,6 +49,13 @@ class Controller:
         """
 
         return self._events
+
+    def frame_offset(self) -> int:
+        """
+        Returns a the frame offset of the controller.
+        """
+
+        return self._frame_offset
 
     def generate_keyframes(self) -> None:
         """
@@ -62,6 +72,7 @@ class BaseController(Controller):
     - `object_prefix`: the object prefix
     - `notes`: a list of `MidiNote` objects
     - `events`: a list of `Event` objects
+    - `frame_offset`: the relative offset of the generated frames
     """
 
     def __init__(
@@ -69,10 +80,12 @@ class BaseController(Controller):
         object_prefix: str,
         notes: list[MidiNote],
         events: list[Event],
+        frame_offset: int = 0,
     ):
         super().__init__(
             notes,
             events,
+            frame_offset,
         )
 
         self.object_prefix = object_prefix
@@ -80,6 +93,7 @@ class BaseController(Controller):
     def generate_keyframes(self) -> None:
         object_prefix = self.object_prefix
         events = self.events()
+        frame_offset = self.frame_offset()
         fps = bpy.context.scene.render.fps
 
         for note in self.notes():
@@ -111,7 +125,9 @@ class BaseController(Controller):
                     frame = start
 
                 set_prop(target, prop, get_prop(target, prop) + amount)
-                target.keyframe_insert(data_path=keyframe_prop, frame=frame)
+                target.keyframe_insert(
+                    data_path=keyframe_prop, frame=frame + frame_offset
+                )
 
 
 class RoboticController(Controller):
@@ -122,6 +138,7 @@ class RoboticController(Controller):
     - `target_prefix`: the target object prefix
     - `notes`: a list of `MidiNote` objects
     - `events`: a list of `Event` objects
+    - `frame_offset`: the relative offset of the generated frames
     """
 
     def __init__(
@@ -130,8 +147,9 @@ class RoboticController(Controller):
         target_prefix: str,
         notes: list[MidiNote],
         events: list[Event] = [],
+        frame_offset: int = 0,
     ):
-        super().__init__(notes, events)
+        super().__init__(notes, events, frame_offset)
 
         self.target_prefix = target_prefix
         self.effectors = {}
@@ -149,13 +167,14 @@ class RoboticController(Controller):
     def generate_keyframes(self):
         target_prefix = self.target_prefix
         effectors = self.effectors
-        fps = bpy.context.scene.render.fps
         notes = self.notes()
+        frame_offset = self.frame_offset()
+        fps = bpy.context.scene.render.fps
 
         for i, note in enumerate(notes):
             target = bpy.data.objects[f"{target_prefix}{note.note()}"]
-            start = note.start() * fps
-            end = note.end() * fps
+            start = note.start() * fps + frame_offset
+            end = note.end() * fps + frame_offset
             next_event = None if i == len(notes) - 1 else notes[i + 1]
 
             # target normal
