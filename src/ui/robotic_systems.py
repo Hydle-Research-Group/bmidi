@@ -9,21 +9,20 @@ class BMIDI_Robotic_Effector(bpy.types.PropertyGroup):
     )
     return_duration: bpy.props.FloatProperty(
         name="Return Duration (s)",
-        description="Given time for the effectors to return to the original position",
+        description="Given time for the effector to return to the original position",
         default=1.0,
         soft_min=0.01,
     )
     move_duration: bpy.props.FloatProperty(
         name="Move Duration (s)",
-        description="Given time for the effectors to move",
+        description="Given time for the effector to move",
         default=1.0,
         soft_min=0.01,
     )
     lift_amount: bpy.props.FloatProperty(
         name="Lift Amount",
-        description="Number of units the effectors move away from (upon the note finishing)",
+        description="Number of units the effector moves away from (upon the note finishing)",
         default=0.0,
-        soft_min=0.0,
     )
 
 
@@ -43,11 +42,11 @@ class BMIDI_Robotic_System(bpy.types.PropertyGroup):
     )
     use_block_list: bpy.props.BoolProperty(
         name="Use Block List",
-        description="Block certain notes from being key-framed",
+        description="Block certain notes from being keyframed",
         default=False,
     )
     blocked_notes: bpy.props.StringProperty(
-        name="Blocked Notes", description="Comma separated MIDI notes", default=""
+        name="Blocked Notes", description="Comma separated MIDI notes"
     )
     channel: bpy.props.EnumProperty(
         name="Channel",
