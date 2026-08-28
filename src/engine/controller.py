@@ -1,6 +1,4 @@
 import bpy
-import mido
-from bpy.types import Object
 from mathutils import Vector
 
 from src.engine.effector import Effector
@@ -23,62 +21,17 @@ class Controller:
     """
     A controller object.
 
-    - `midi_file`: a valid path to a midi file
+    - `notes`: a list of `MidiNote` objects
     - `events`: a list of `Event` objects
-    - `allowed_notes`: a list of integers (MIDI numbers 0-127) that the controller is allowed to generate
-    - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
     """
 
     def __init__(
         self,
-        midi_file: str,
+        notes: list[MidiNote],
         events: list[Event] = [],
-        allowed_notes: list[int] = [],
-        channel: int | None = None,
     ):
-        self._notes = []
+        self._notes = notes
         self._events = events
-        self._allowed_notes = allowed_notes
-
-        midi = mido.MidiFile(midi_file)
-        current_time = 0.0
-        active_notes = {}  # start_time, velocity
-
-        for msg in midi:
-            current_time += msg.time
-
-            if msg.type == "note_on" and msg.velocity > 0:
-                if msg.note not in allowed_notes:
-                    continue
-
-                if channel is not None and msg.channel != channel:
-                    continue
-
-                active_notes[(msg.note, msg.channel)] = (
-                    current_time,
-                    msg.velocity / 127.0,
-                )
-
-            elif msg.type in ("note_off", "note_on") and msg.velocity == 0:
-                if msg.note not in allowed_notes:
-                    continue
-
-                if channel is not None and msg.channel != channel:
-                    continue
-
-                key = (msg.note, msg.channel)
-                if key in active_notes:
-                    start_time, velocity = active_notes.pop(key)
-
-                    self._notes.append(
-                        MidiNote(
-                            start_time, current_time - start_time, msg.note, velocity
-                        )
-                    )
-
-        # first/last setting
-        self._notes[0]._first = True
-        self._notes[len(self._notes) - 1]._last = True
 
     def notes(self) -> list[MidiNote]:
         """
@@ -94,13 +47,6 @@ class Controller:
 
         return self._events
 
-    def allowed_notes(self) -> list[int]:
-        """
-        Returns a list of integers (MIDI numbers 0-127) used by the controller.
-        """
-
-        return self._allowed_notes
-
     def generate_keyframes(self) -> None:
         """
         Generate the keyframes for this controller.
@@ -114,21 +60,20 @@ class BaseController(Controller):
     A base controller that key-frames a set of animation events based on MIDI data.
 
     - `object_prefix`: the object prefix
-    - `midi_file`: a valid path to a midi file
+    - `notes`: a list of `MidiNote` objects
     - `events`: a list of `Event` objects
-    - `notes`: a list of integers (MIDI notes 0-127)
-    - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
     """
 
     def __init__(
         self,
         object_prefix: str,
-        midi_file: str,
-        events: list[Event] = [],
-        notes: list[int] = [],
-        channel: int | None = None,
+        notes: list[MidiNote],
+        events: list[Event],
     ):
-        super().__init__(midi_file, events, notes, channel)
+        super().__init__(
+            notes,
+            events,
+        )
 
         self.object_prefix = object_prefix
 
@@ -137,8 +82,8 @@ class BaseController(Controller):
         events = self.events()
         fps = bpy.context.scene.render.fps
 
-        for note in self.allowed_notes():
-            target = bpy.data.objects[f"{object_prefix}{note}"]
+        for note in self.notes():
+            target = bpy.data.objects[f"{object_prefix}{note.note()}"]
             target.animation_data_clear()
 
         for note in self.notes():
@@ -175,22 +120,18 @@ class RoboticController(Controller):
 
     - `effectors`: a list of `Effector` objects
     - `target_prefix`: the target object prefix
-    - `midi_file`: a valid path to a midi file
+    - `notes`: a list of `MidiNote` objects
     - `events`: a list of `Event` objects
-    - `notes`: a list of integers (MIDI notes 0-127)
-    - `channel`: an integer (MIDI channels 0-15) if `None` notes from all channels in the MIDI source are used
     """
 
     def __init__(
         self,
         effectors: list[Effector],
         target_prefix: str,
-        midi_file: str,
+        notes: list[MidiNote],
         events: list[Event] = [],
-        notes: list[int] = [],
-        channel: int | None = None,
     ):
-        super().__init__(midi_file, events, notes, channel)
+        super().__init__(notes, events)
 
         self.target_prefix = target_prefix
         self.effectors = {}
@@ -226,7 +167,7 @@ class RoboticController(Controller):
             target_rotation = target.rotation_euler.copy()
 
             # move arm to default positions before
-            if note.is_first():
+            if i == 0:
                 for arm, origin in effectors.items():
                     return_duration = origin[2].return_duration() * fps
 
@@ -283,7 +224,7 @@ class RoboticController(Controller):
                 )
 
             # move arm to default positions after
-            if note.is_last():
+            if i == len(notes) - 1:
                 for arm, origin in effectors.items():
                     return_duration = origin[2].return_duration() * fps
 

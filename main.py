@@ -1,3 +1,4 @@
+import mido
 from bpy.types import Object
 
 
@@ -46,6 +47,7 @@ from src.engine.controller import BaseController, RoboticController
 from src.engine.effector import Effector
 from src.engine.event import Event
 from src.engine.helpers import get_midi_channel_ranges
+from src.engine.note import MidiNote
 from src.ui.controllers import (
     BMIDI_Controller,
     BMIDI_Event,
@@ -470,6 +472,36 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
             self.report({"ERROR"}, "No MIDI file selected")
             return {"CANCELLED"}
 
+        midi = mido.MidiFile(midi_file)
+        current_time = 0.0
+        active_notes = {}  # start_time, velocity
+        notes = []
+
+        # parse the midi file
+        for msg in midi:
+            current_time += msg.time
+
+            if msg.type == "note_on" and msg.velocity > 0:
+                active_notes[(msg.note, msg.channel)] = (
+                    current_time,
+                    msg.velocity / 127.0,
+                )
+
+            elif msg.type in ("note_off", "note_on") and msg.velocity == 0:
+                key = (msg.note, msg.channel)
+                if key in active_notes:
+                    start_time, velocity = active_notes.pop(key)
+
+                    notes.append(
+                        MidiNote(
+                            start_time,
+                            current_time - start_time,
+                            msg.note,
+                            msg.channel,
+                            velocity,
+                        )
+                    )
+
         for item in context.scene.bmidi_items:
             if not item.enabled:
                 continue
@@ -494,30 +526,32 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
                 )
 
             channel = int(item.channel) - 1
-
             note_start = item.note_range_start
             note_end = item.note_range_end + 1  # 0 - 128
             blocked_notes = (
                 process_note_list(item.blocked_notes) if item.use_block_list else []
             )
-            notes = [i for i in range(note_start, note_end) if i not in blocked_notes]
 
             controller = BaseController(
-                item.object_prefix, midi_file, events, notes, channel
+                item.object_prefix,
+                [
+                    i
+                    for i in notes
+                    if i.note() in range(note_start, note_end)
+                    and i.note() not in blocked_notes
+                    and i.channel() == channel
+                ],
+                events,
             )
             controller.generate_keyframes()
 
         for system in context.scene.bmidi_robotic_systems:
+            channel = int(system.channel) - 1
             note_start = system.note_range_start
             note_end = system.note_range_end + 1
-
             blocked_notes = (
                 process_note_list(system.blocked_notes) if system.use_block_list else []
             )
-
-            notes = [i for i in range(note_start, note_end) if i not in blocked_notes]
-
-            channel = int(system.channel) - 1
 
             controller = RoboticController(
                 [
@@ -530,9 +564,13 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
                     for e in system.effectors
                 ],
                 system.target_prefix,
-                midi_file,
-                notes=notes,
-                channel=channel,
+                [
+                    i
+                    for i in notes
+                    if i.note() in range(note_start, note_end)
+                    and i.note() not in blocked_notes
+                    and i.channel() == channel
+                ],
             )
             controller.generate_keyframes()
 

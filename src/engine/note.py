@@ -5,16 +5,18 @@ class MidiNote:
     - `start`: the time the note starts
     - `duration`: the note duration
     - `note`: the specific MIDI note (MIDI numbers 0-127)
+    - `channel`: the specific MIDI channel (MIDI numbers 0-15)
     - `velocity`: the velocity of the note (in the range 0-127)
     """
 
-    def __init__(self, start: float, duration: float, note: int, velocity: float):
+    def __init__(
+        self, start: float, duration: float, note: int, channel: int, velocity: float
+    ):
         self._start = start
         self._duration = duration
         self._note = note
+        self._channel = channel
         self._velocity = velocity
-        self._first = False
-        self._last = False
 
     def start(self) -> float:
         """
@@ -44,23 +46,16 @@ class MidiNote:
 
         return self._note
 
+    def channel(self) -> int:
+        """
+        Returns the specific MIDI channel (MIDI numbers 0-15.)
+        """
+
+        return self._channel
+
     def velocity(self) -> float:
         """
         Returns the velocity of the note (in the range 0-127.)
         """
 
         return self._velocity
-
-    def is_first(self) -> bool:
-        """
-        Returns if the note occurs first.
-        """
-
-        return self._first
-
-    def is_last(self) -> bool:
-        """
-        Returns if the note occurs first.
-        """
-
-        return self._last
