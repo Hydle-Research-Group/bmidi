@@ -1,7 +1,7 @@
 import bpy
 from bpy.types import Panel
 
-from src.engine.event import EventTrigger
+from src.engine.frame import FrameTrigger
 from src.engine.helpers import get_channel_items
 
 
@@ -16,27 +16,27 @@ class BMIDI_Frame(bpy.types.PropertyGroup):
         name="Trigger",
         items=[
             (
-                EventTrigger.BeforeStart,
+                FrameTrigger.BeforeStart,
                 "Before MIDI Note Starts",
                 "Execute this event before the MIDI note starts",
             ),
             (
-                EventTrigger.AfterStart,
+                FrameTrigger.AfterStart,
                 "After MIDI Note Starts",
                 "Execute this event after the MIDI note starts",
             ),
             (
-                EventTrigger.BeforeEnd,
+                FrameTrigger.BeforeEnd,
                 "Before MIDI Note Ends",
                 "Execute this event before the MIDI note ends",
             ),
             (
-                EventTrigger.AfterEnd,
+                FrameTrigger.AfterEnd,
                 "After MIDI Note Ends",
                 "Execute this event after the MIDI note ends",
             ),
         ],
-        default=EventTrigger.BeforeStart,
+        default=FrameTrigger.BeforeStart,
     )
     property: bpy.props.EnumProperty(
         name="Property",
@@ -295,7 +295,7 @@ class BMIDI_OT_add_frame(bpy.types.Operator):
         frame = obj.frames.add()
 
         frame.time = 0.0
-        frame.trigger = EventTrigger.BeforeStart
+        frame.trigger = FrameTrigger.BeforeStart
         frame.property = "location"
 
         frame.x = 0.0
