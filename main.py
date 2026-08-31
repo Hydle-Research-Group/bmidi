@@ -1,5 +1,6 @@
 import mido
 from bpy.types import Object
+from mathutils import Vector
 
 
 def initialize():
@@ -14,16 +15,20 @@ def initialize():
     import src.engine.controller
     import src.engine.effector
     import src.engine.event
+    import src.engine.frame
     import src.engine.helpers
     import src.engine.note
     import src.ui.controllers
+    import src.ui.note_mapper
     import src.ui.robotic_systems
 
     importlib.reload(src.engine.note)
+    importlib.reload(src.engine.frame)
     importlib.reload(src.engine.event)
     importlib.reload(src.engine.effector)
     importlib.reload(src.ui.robotic_systems)
     importlib.reload(src.ui.controllers)
+    importlib.reload(src.ui.note_mapper)
     importlib.reload(src.engine.controller)
 
 
@@ -43,9 +48,10 @@ import math
 
 import bpy
 
-from src.engine.controller import BaseController, RoboticController
+from src.engine.controller import BaseController, NoteController, RoboticController
 from src.engine.effector import Effector
 from src.engine.event import Event
+from src.engine.frame import Frame
 from src.engine.helpers import get_midi_channel_ranges
 from src.engine.note import MidiNote
 from src.ui.controllers import (
@@ -53,6 +59,23 @@ from src.ui.controllers import (
     BMIDI_Event,
     BMIDI_UL_controller_events,
     BMIDI_UL_controllers,
+)
+from src.ui.note_mapper import (
+    BMIDI_Frame,
+    BMIDI_NoteEvent,
+    BMIDI_Object,
+    BMIDI_OT_add_frame,
+    BMIDI_OT_add_note_event,
+    BMIDI_OT_add_object,
+    BMIDI_OT_duplicate_frame,
+    BMIDI_OT_duplicate_note_event,
+    BMIDI_OT_remove_frame,
+    BMIDI_OT_remove_note_event,
+    BMIDI_OT_remove_object,
+    BMIDI_UL_event_objects,
+    BMIDI_UL_note_events,
+    BMIDI_UL_object_frames,
+    VIEW_3D_PT_bmidi_note_mapper,
 )
 from src.ui.robotic_systems import (
     BMIDI_Robotic_Effector,
@@ -577,6 +600,43 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
             )
             controller.generate_keyframes()
 
+        frames = {}
+        allowed_notes = []
+
+        for item in context.scene.bmidi_note_events:
+            if not item.enabled:
+                continue
+
+            allowed_notes.append(item.note)
+
+            for o in item.objects:
+                frames.setdefault(item.note, []).extend(
+                    Frame(
+                        o.object,
+                        f.time,
+                        f.trigger,
+                        f.property,
+                        Vector(
+                            (math.radians(f.x), math.radians(f.y), math.radians(f.z))
+                        )
+                        if f.property == "rotation_euler"
+                        else (
+                            math.radians(f.x)
+                            if f.property == "data.spot_size"
+                            else Vector((f.x, f.y, f.z))
+                        ),
+                        relative=f.relative,
+                    )
+                    for f in o.frames
+                )
+
+        controller = NoteController(
+            frames,
+            [i for i in notes if i.note() in allowed_notes],
+            frame_offset=scene.bmidi_frame_offset,
+        )
+        controller.generate_keyframes()
+
         return {"FINISHED"}
 
 
@@ -829,6 +889,20 @@ class VIEW_3D_PT_bmidi_animation_panel(bpy.types.Panel):
 
 
 classes = (
+    BMIDI_Frame,
+    BMIDI_Object,
+    BMIDI_NoteEvent,
+    BMIDI_OT_add_frame,
+    BMIDI_OT_add_note_event,
+    BMIDI_OT_add_object,
+    BMIDI_OT_duplicate_note_event,
+    BMIDI_OT_duplicate_frame,
+    BMIDI_OT_remove_frame,
+    BMIDI_OT_remove_note_event,
+    BMIDI_OT_remove_object,
+    BMIDI_UL_event_objects,
+    BMIDI_UL_note_events,
+    BMIDI_UL_object_frames,
     BMIDI_Event,
     BMIDI_Controller,
     BMIDI_Robotic_Effector,
@@ -838,6 +912,7 @@ classes = (
     BMIDI_UL_robotic_systems,
     BMIDI_UL_robotic_effectors,
     VIEW_3D_PT_bmidi_selector_panel,
+    VIEW_3D_PT_bmidi_note_mapper,
     VIEW_3D_PT_bmidi_control_panel,
     VIEW_3D_PT_bmidi_robotic_panel,
     VIEW_3D_PT_bmidi_rename_panel,
@@ -867,6 +942,12 @@ def register():
 
     bpy.types.Scene.bmidi_items = bpy.props.CollectionProperty(
         type=BMIDI_Controller,
+    )
+    bpy.types.Scene.bmidi_note_events = bpy.props.CollectionProperty(
+        type=BMIDI_NoteEvent,
+    )
+    bpy.types.Scene.bmidi_active_note_event = bpy.props.IntProperty(
+        default=0,
     )
     bpy.types.Scene.bmidi_active_item = bpy.props.IntProperty(
         default=0,
