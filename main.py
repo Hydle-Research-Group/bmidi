@@ -132,6 +132,8 @@ class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
             allowed_notes.append(item.note)
 
             for o in item.objects:
+                o.object.animation_data_clear()
+
                 frames.setdefault(item.note, []).extend(
                     Frame(
                         o.object,
