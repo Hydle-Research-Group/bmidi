@@ -383,7 +383,9 @@ class BMIDI_Node_MIDIData(BMIDI_TreeNode, Node):
             midi_path = self.midi_file
 
             layout.separator()
-            layout.label(text="MIDI Information", icon="INFO")
+
+            box = layout.box()
+            box.label(text="MIDI Information", icon="INFO")
 
             if midi_path:
                 channel_ranges = get_midi_channel_ranges(midi_path)
@@ -391,9 +393,9 @@ class BMIDI_Node_MIDIData(BMIDI_TreeNode, Node):
                 if channel_ranges:
                     for ch in sorted(channel_ranges):
                         n, z = channel_ranges[ch]
-                        layout.label(text=f"Channel {ch}: Notes {n}-{z}")
+                        box.label(text=f"Channel {ch}: Notes {n}-{z}")
                 else:
-                    layout.label(text="Error parsing midi file", icon="ERROR")
+                    box.label(text="Error parsing midi file", icon="ERROR")
 
             layout.separator()
             layout.prop(self, "frame_offset")
