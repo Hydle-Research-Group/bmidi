@@ -45,6 +45,12 @@ from src.engine.helpers import get_midi_channel_ranges
 from src.engine.note import MidiNote
 from src.ui.note_mapper import (
     BMIDI_Frame,
+    BMIDI_MIDIDataSocket,
+    BMIDI_MIDIEvent,
+    BMIDI_Node_FrameCollection,
+    BMIDI_Node_MIDIData,
+    BMIDI_Node_MIDIDataFilter,
+    BMIDI_NodeTree,
     BMIDI_NoteEvent,
     BMIDI_Object,
     BMIDI_OT_add_frame,
@@ -52,13 +58,19 @@ from src.ui.note_mapper import (
     BMIDI_OT_add_object,
     BMIDI_OT_duplicate_frame,
     BMIDI_OT_duplicate_note_event,
+    BMIDI_OT_frame_collection_add,
+    BMIDI_OT_frame_collection_duplicate,
+    BMIDI_OT_frame_collection_remove,
+    BMIDI_OT_midi_data_generate,
     BMIDI_OT_remove_frame,
     BMIDI_OT_remove_note_event,
     BMIDI_OT_remove_object,
     BMIDI_UL_event_objects,
+    BMIDI_UL_frame_collection,
     BMIDI_UL_note_events,
     BMIDI_UL_object_frames,
     VIEW_3D_PT_bmidi_note_mapper,
+    draw_add_menu,
 )
 
 
@@ -264,6 +276,17 @@ class VIEW_3D_PT_bmidi_animation_panel(bpy.types.Panel):
 
 classes = (
     BMIDI_Frame,
+    BMIDI_MIDIEvent,
+    BMIDI_OT_midi_data_generate,
+    BMIDI_OT_frame_collection_add,
+    BMIDI_OT_frame_collection_duplicate,
+    BMIDI_OT_frame_collection_remove,
+    BMIDI_NodeTree,
+    BMIDI_MIDIDataSocket,
+    BMIDI_Node_MIDIData,
+    BMIDI_Node_MIDIDataFilter,
+    BMIDI_Node_FrameCollection,
+    BMIDI_UL_frame_collection,
     BMIDI_Object,
     BMIDI_NoteEvent,
     BMIDI_OT_add_frame,
@@ -289,6 +312,9 @@ classes = (
 def register():
     for cls in classes:
         bpy.utils.register_class(cls)
+
+    bpy.types.NODE_MT_add.append(draw_add_menu)
+    bpy.types.NODE_MT_swap.append(draw_add_menu)
 
     bpy.types.Scene.bmidi_note_events = bpy.props.CollectionProperty(
         type=BMIDI_NoteEvent,
@@ -342,6 +368,9 @@ def register():
 
 
 def unregister():
+    bpy.types.NODE_MT_add.remove(draw_add_menu)
+    bpy.types.NODE_MT_swap.remove(draw_add_menu)
+
     for cls in reversed(classes):
         bpy.utils.unregister_class(cls)
 

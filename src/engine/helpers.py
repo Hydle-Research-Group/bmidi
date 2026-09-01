@@ -29,6 +29,6 @@ def get_channel_items(_, context):
         channels = get_midi_channel_ranges(scene.bmidi_midi_file)
 
         if channels:
-            return [(str(ch), str(ch), "") for ch in sorted(channels)]
+            return [(str(ch), f"Channel {ch}", "") for ch in sorted(channels)]
 
     return []
