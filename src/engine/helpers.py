@@ -20,15 +20,3 @@ def get_midi_channel_ranges(midi_path: str):
 
     # Remove unused channels
     return {ch: (mn, mx) for ch, (mn, mx) in ranges.items() if mn <= mx}
-
-
-def get_channel_items(_, context):
-    scene = context.scene
-
-    if scene.bmidi_midi_file:
-        channels = get_midi_channel_ranges(scene.bmidi_midi_file)
-
-        if channels:
-            return [(str(ch), f"Channel {ch}", "") for ch in sorted(channels)]
-
-    return []

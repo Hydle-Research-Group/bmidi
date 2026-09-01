@@ -1,7 +1,3 @@
-import mido
-from mathutils import Vector
-
-
 def initialize():
     import importlib
     import sys
@@ -15,11 +11,11 @@ def initialize():
     import src.engine.frame
     import src.engine.helpers
     import src.engine.note
-    import src.ui.note_mapper
+    import src.ui.node_editor
 
     importlib.reload(src.engine.note)
     importlib.reload(src.engine.frame)
-    importlib.reload(src.ui.note_mapper)
+    importlib.reload(src.ui.node_editor)
     importlib.reload(src.engine.controller)
 
 
@@ -35,15 +31,9 @@ bl_info = {
     "category": "Development",
 }
 
-import math
-
 import bpy
 
-from src.engine.controller import NoteController
-from src.engine.frame import Frame
-from src.engine.helpers import get_midi_channel_ranges
-from src.engine.note import MidiNote
-from src.ui.note_mapper import (
+from src.ui.node_editor import (
     BMIDI_Frame,
     BMIDI_MIDIDataSocket,
     BMIDI_MIDIEvent,
@@ -51,129 +41,13 @@ from src.ui.note_mapper import (
     BMIDI_Node_MIDIData,
     BMIDI_Node_MIDIDataFilter,
     BMIDI_NodeTree,
-    BMIDI_NoteEvent,
-    BMIDI_Object,
-    BMIDI_OT_add_frame,
-    BMIDI_OT_add_note_event,
-    BMIDI_OT_add_object,
-    BMIDI_OT_duplicate_frame,
-    BMIDI_OT_duplicate_note_event,
     BMIDI_OT_frame_collection_add,
     BMIDI_OT_frame_collection_duplicate,
     BMIDI_OT_frame_collection_remove,
     BMIDI_OT_midi_data_generate,
-    BMIDI_OT_remove_frame,
-    BMIDI_OT_remove_note_event,
-    BMIDI_OT_remove_object,
-    BMIDI_UL_event_objects,
     BMIDI_UL_frame_collection,
-    BMIDI_UL_note_events,
-    BMIDI_UL_object_frames,
-    VIEW_3D_PT_bmidi_note_mapper,
     draw_add_menu,
 )
-
-
-def process_note_list(expr: str) -> list[int]:
-    notes = []
-
-    for i in expr.strip().split(","):
-        if "-" in i:
-            start, end = i.split("-")
-            notes.extend(range(int(start), int(end) + 1))
-        else:
-            notes.append(int(i))
-
-    return notes
-
-
-class VIEW_3D_OT_generate_keyframes(bpy.types.Operator):
-    """
-    Clears object animation data and generates the keyframes for all items
-    """
-
-    bl_idname = "bmidi.generate_keyframes"
-    bl_label = "Generate Keyframes"
-
-    def execute(self, context):
-        scene = context.scene
-        scene.frame_set(-1)
-        midi_file = scene.bmidi_midi_file
-
-        if not midi_file:
-            self.report({"ERROR"}, "No MIDI file selected")
-            return {"CANCELLED"}
-
-        midi = mido.MidiFile(midi_file)
-        current_time = 0.0
-        active_notes = {}  # start_time, velocity
-        notes = []
-
-        # parse the midi file
-        for msg in midi:
-            current_time += msg.time
-
-            if msg.type == "note_on" and msg.velocity > 0:
-                active_notes[(msg.note, msg.channel)] = (
-                    current_time,
-                    msg.velocity / 127.0,
-                )
-
-            elif msg.type in ("note_off", "note_on") and msg.velocity == 0:
-                key = (msg.note, msg.channel)
-                if key in active_notes:
-                    start_time, velocity = active_notes.pop(key)
-
-                    notes.append(
-                        MidiNote(
-                            start_time,
-                            current_time - start_time,
-                            msg.note,
-                            msg.channel,
-                            velocity,
-                        )
-                    )
-
-        frames = {}
-        allowed_notes = []
-
-        for item in context.scene.bmidi_note_events:
-            if not item.enabled:
-                continue
-
-            allowed_notes.append(item.note)
-
-            for o in item.objects:
-                o.object.animation_data_clear()
-
-                frames.setdefault(item.note, []).extend(
-                    Frame(
-                        o.object,
-                        f.time,
-                        f.trigger,
-                        f.property,
-                        Vector(
-                            (math.radians(f.x), math.radians(f.y), math.radians(f.z))
-                        )
-                        if f.property == "rotation_euler"
-                        else (
-                            math.radians(f.x)
-                            if f.property == "data.spot_size"
-                            else Vector((f.x, f.y, f.z))
-                        ),
-                        relative=f.relative,
-                    )
-                    for f in o.frames
-                )
-
-        controller = NoteController(
-            frames,
-            [i for i in notes if i.note() in allowed_notes],
-            frame_offset=scene.bmidi_frame_offset,
-        )
-        controller.generate_keyframes()
-
-        return {"FINISHED"}
 
 
 class VIEW_3D_OT_rename_selected(bpy.types.Operator):
@@ -208,37 +82,6 @@ class VIEW_3D_OT_rename_selected(bpy.types.Operator):
         return {"FINISHED"}
 
 
-class VIEW_3D_PT_bmidi_selector_panel(bpy.types.Panel):
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "bmidi"
-    bl_label = "MIDI File"
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-        box = layout.box()
-        box.prop(scene, "bmidi_midi_file")
-
-        if scene.bmidi_midi_file:
-            midi_path = scene.bmidi_midi_file
-
-            layout.separator()
-            box.label(text="MIDI Information", icon="INFO")
-
-            if midi_path:
-                channel_ranges = get_midi_channel_ranges(midi_path)
-
-                if channel_ranges:
-                    for ch in sorted(channel_ranges):
-                        n, z = channel_ranges[ch]
-                        box.label(text=f"Channel {ch}: Notes {n}-{z}")
-                else:
-                    box.label(text="Error parsing midi file", icon="ERROR")
-        else:
-            box.label(text="No midi file selected")
-
-
 class VIEW_3D_PT_bmidi_rename_panel(bpy.types.Panel):
     bl_space_type = "VIEW_3D"
     bl_region_type = "UI"
@@ -259,21 +102,6 @@ class VIEW_3D_PT_bmidi_rename_panel(bpy.types.Panel):
         box.operator("bmidi.rename_selected", icon="TEXT")
 
 
-class VIEW_3D_PT_bmidi_animation_panel(bpy.types.Panel):
-    bl_space_type = "VIEW_3D"
-    bl_region_type = "UI"
-    bl_category = "bmidi"
-    bl_label = "Animation"
-
-    def draw(self, context):
-        layout = self.layout
-        scene = context.scene
-
-        box = layout.box()
-        box.prop(scene, "bmidi_frame_offset")
-        box.operator("bmidi.generate_keyframes", icon="MODIFIER")
-
-
 classes = (
     BMIDI_Frame,
     BMIDI_MIDIEvent,
@@ -287,24 +115,7 @@ classes = (
     BMIDI_Node_MIDIDataFilter,
     BMIDI_Node_FrameCollection,
     BMIDI_UL_frame_collection,
-    BMIDI_Object,
-    BMIDI_NoteEvent,
-    BMIDI_OT_add_frame,
-    BMIDI_OT_add_note_event,
-    BMIDI_OT_add_object,
-    BMIDI_OT_duplicate_note_event,
-    BMIDI_OT_duplicate_frame,
-    BMIDI_OT_remove_frame,
-    BMIDI_OT_remove_note_event,
-    BMIDI_OT_remove_object,
-    BMIDI_UL_event_objects,
-    BMIDI_UL_note_events,
-    BMIDI_UL_object_frames,
-    VIEW_3D_PT_bmidi_selector_panel,
-    VIEW_3D_PT_bmidi_note_mapper,
     VIEW_3D_PT_bmidi_rename_panel,
-    VIEW_3D_PT_bmidi_animation_panel,
-    VIEW_3D_OT_generate_keyframes,
     VIEW_3D_OT_rename_selected,
 )
 
@@ -316,23 +127,6 @@ def register():
     bpy.types.NODE_MT_add.append(draw_add_menu)
     bpy.types.NODE_MT_swap.append(draw_add_menu)
 
-    bpy.types.Scene.bmidi_note_events = bpy.props.CollectionProperty(
-        type=BMIDI_NoteEvent,
-    )
-    bpy.types.Scene.bmidi_active_note_event = bpy.props.IntProperty(
-        default=0,
-    )
-    bpy.types.Scene.bmidi_frame_offset = bpy.props.IntProperty(
-        name="Frame Offset",
-        description="Offset the generated frames by a specified amount",
-        default=0,
-        min=0,
-    )
-
-    bpy.types.Scene.bmidi_midi_file = bpy.props.StringProperty(
-        name="MIDI File",
-        subtype="FILE_PATH",
-    )
     bpy.types.Scene.bmidi_rename_prefix = bpy.props.StringProperty(
         name="Object Prefix",
     )
