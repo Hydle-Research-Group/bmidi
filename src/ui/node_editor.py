@@ -279,36 +279,26 @@ class BMIDI_OT_midi_data_generate(bpy.types.Operator):
 
     def execute(self, context: Context):
         context.scene.frame_set(-1)
+        nodes = context.space_data.edit_tree.nodes
 
-        tree: list[Node] = context.space_data.edit_tree.nodes
-        controllers = []
+        for n in nodes:
+            if n.bl_idname == "BMIDI_Node_FrameCollection" and n.object is not None:
+                n.object.animation_data_clear()
 
-        for node in tree:
-            if node.bl_idname == "BMIDI_Node_MIDIData":
-                midi_file = node.midi_file
+        node = nodes.get(self.node_name)
+        midi_file = node.midi_file
 
-                if not midi_file:
-                    return {"CANCELLED"}
+        if not midi_file:
+            return {"CANCELLED"}
 
-                notes = parse_midi(midi_file)
-                events = create_events(node.outputs, notes)
-
-                controllers.append(
-                    NoteController(
-                        events,
-                        [n for n in notes if events.get((n.note(), n.channel()))],
-                        frame_offset=node.frame_offset,
-                    )
-                )
-
-            if (
-                node.bl_idname == "BMIDI_Node_FrameCollection"
-                and node.object is not None
-            ):
-                node.object.animation_data_clear()
-
-        for controller in controllers:
-            controller.generate_keyframes()
+        notes = parse_midi(midi_file)
+        events = create_events(node.outputs, notes)
+        controller = NoteController(
+            events,
+            [n for n in notes if events.get((n.note(), n.channel()))],
+            frame_offset=node.frame_offset,
+        )
+        controller.generate_keyframes()
 
         return {"FINISHED"}
 
