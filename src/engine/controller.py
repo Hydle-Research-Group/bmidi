@@ -1,4 +1,5 @@
 import bpy
+from mathutils import Euler
 
 from src.engine.frame import Frame, FrameTrigger
 from src.engine.note import MidiNote
@@ -65,7 +66,7 @@ class NoteController(Controller):
 
     def __init__(
         self,
-        note_events: dict[int, list[Frame]],
+        note_events: dict[tuple[int, int], list[Frame]],
         notes: list[MidiNote],
         frame_offset: int = 0,
     ):
@@ -82,7 +83,7 @@ class NoteController(Controller):
             start = note.start() * fps + frame_offset
             end = note.end() * fps + frame_offset
 
-            for action in note_events[note.note()]:
+            for action in note_events[(note.note(), note.channel())]:
                 time = action.time() * fps
                 prop = action.property()
                 obj = action.object()

@@ -1,12 +1,12 @@
 import math
 
 import bpy
-from bpy.types import Node, NodeSocket, NodeTree
-from mathutils import Vector
+from bpy.types import Context, Node, NodeLink, NodeOutputs, NodeSocket, NodeTree
+from mathutils import Euler, Vector
 
 from src.engine.controller import NoteController
 from src.engine.frame import Frame, FrameTrigger
-from src.engine.helpers import get_channel_items, get_midi_channel_ranges
+from src.engine.helpers import get_midi_channel_ranges
 from src.engine.note import MidiNote, parse_midi
 
 
@@ -20,80 +20,77 @@ def draw_add_menu(self, context):
     self.node_operator(layout, "BMIDI_Node_FrameCollection")
 
 
-def get_upstream_nodes(node: Node):
-    nodes = []
+def create_frames(node: Node) -> list[Frame]:
+    frames = []
 
-    for socket in node.inputs:
-        for link in socket.links:
-            nodes.append(link.from_node)
-
-    return nodes
-
-
-def build_frames(node) -> list[Frame]:
-    if node.object is None:
-        return []
-
-    result = []
-
-    for f in node.frames:
-        value = (
-            Vector(
-                (
-                    math.radians(f.x),
-                    math.radians(f.y),
-                    math.radians(f.z),
+    if node.bl_idname == "BMIDI_Node_FrameCollection":
+        for f in node.frames:
+            frames.append(
+                Frame(
+                    node.object,
+                    f.time,
+                    f.trigger,
+                    f.property,
+                    Vector(
+                        (
+                            math.radians(f.x),
+                            math.radians(f.y),
+                            math.radians(f.z),
+                        )
+                    )
+                    if f.property == "rotation_euler"
+                    else (
+                        math.radians(f.x)
+                        if f.property == "data.spot_size"
+                        else Vector(
+                            (
+                                f.x,
+                                f.y,
+                                f.z,
+                            )
+                        )
+                    ),
+                    relative=f.relative,
                 )
             )
-            if f.property == "rotation_euler"
-            else (
-                math.radians(f.x)
-                if f.property == "data.spot_size"
-                else Vector(
-                    (
-                        f.x,
-                        f.y,
-                        f.z,
+
+    return frames
+
+
+def create_events(
+    outputs: NodeOutputs,
+    notes: list[MidiNote],
+) -> dict[tuple[int, int], list[Frame]]:
+    events = {}
+
+    for output in outputs:
+        for link in output.links:
+            node = link.to_node
+
+            if node.bl_idname == "BMIDI_Node_FrameCollection":
+                for n in notes:
+                    key = (n.note(), n.channel())
+
+                    if events.get(key):
+                        events[key].extend(create_frames(node))
+                    else:
+                        events[(n.note(), n.channel())] = create_frames(node)
+
+            elif node.bl_idname == "BMIDI_Node_MIDIDataFilter":
+                filtered_notes = [
+                    n
+                    for n in notes
+                    if n.note() == node.note and n.channel() == node.channel - 1
+                ]
+
+                events.update(
+                    create_events(
+                        node.outputs,
+                        filtered_notes,
                     )
                 )
-            )
-        )
 
-        result.append(
-            Frame(
-                node.object,
-                f.time,
-                f.trigger,
-                f.property,
-                value,
-                relative=f.relative,
-            )
-        )
-
-    return result
-
-
-def resolve_notes(node: Node, midi_notes: list[MidiNote]) -> list[MidiNote]:
-    upstream = get_upstream_nodes(node)
-
-    if not upstream:
-        return []
-
-    source = upstream[0]
-
-    if source.bl_idname == "BMIDI_Node_MIDIData":
-        return midi_notes
-
-    if source.bl_idname == "BMIDI_Node_MIDIDataFilter":
-        notes = resolve_notes(source, midi_notes)
-
-        return [
-            note
-            for note in notes
-            if note.note() == source.note and note.channel() == source.channel - 1
-        ]
-
-    return []
+    return events
 
 
 class BMIDI_MIDIEvent(bpy.types.PropertyGroup):
@@ -280,57 +277,38 @@ class BMIDI_OT_midi_data_generate(bpy.types.Operator):
 
     node_name: bpy.props.StringProperty()
 
-    def execute(self, context):
+    def execute(self, context: Context):
         context.scene.frame_set(-1)
 
-        tree = context.space_data.edit_tree
-        midi_node = tree.nodes.get(self.node_name)
+        tree: list[Node] = context.space_data.edit_tree.nodes
+        controllers = []
 
-        if midi_node is None:
-            return {"CANCELLED"}
+        for node in tree:
+            if node.bl_idname == "BMIDI_Node_MIDIData":
+                midi_file = node.midi_file
 
-        midi_file = midi_node.midi_file
+                if not midi_file:
+                    return {"CANCELLED"}
 
-        if not midi_file:
-            return {"CANCELLED"}
+                notes = parse_midi(midi_file)
+                events = create_events(node.outputs, notes)
 
-        notes = parse_midi(midi_file)
-        allowed_notes = []
+                controllers.append(
+                    NoteController(
+                        events,
+                        [n for n in notes if events.get((n.note(), n.channel()))],
+                        frame_offset=node.frame_offset,
+                    )
+                )
 
-        for node in tree.nodes:
-            if node.bl_idname != "BMIDI_Node_FrameCollection":
-                continue
-
-            if node.object is not None:
+            if (
+                node.bl_idname == "BMIDI_Node_FrameCollection"
+                and node.object is not None
+            ):
                 node.object.animation_data_clear()
 
-        frames = {}
-
-        for node in tree.nodes:
-            if node.bl_idname != "BMIDI_Node_FrameCollection":
-                continue
-
-            if node.object is None:
-                continue
-
-            node_notes = resolve_notes(
-                node,
-                notes,
-            )
-
-            node_frames = build_frames(node)
-
-            for note in node_notes:
-                allowed_notes.append(note.note())
-                frames.setdefault(note.note(), []).extend(node_frames)
-
-        controller = NoteController(
-            frames,
-            [n for n in notes if n.note() in allowed_notes],
-            frame_offset=midi_node.frame_offset,
-        )
-
-        controller.generate_keyframes()
+        for controller in controllers:
+            controller.generate_keyframes()
 
         return {"FINISHED"}
 
