@@ -99,17 +99,35 @@ class NoteController(Controller):
                 else:
                     frame = start
 
+                value = action.value()
+
                 if prop in ("data.spot_size", "data.energy"):
                     if action.relative():
-                        set_prop(obj, prop, get_prop(obj, prop) + action.value())
+                        set_prop(obj, prop, get_prop(obj, prop) + value)
                     else:
-                        set_prop(obj, prop, action.value())
+                        set_prop(obj, prop, value)
 
                     obj.keyframe_insert(data_path="data", frame=frame)
                 else:
                     if action.relative():
-                        setattr(obj, prop, getattr(obj, prop) + action.value())
+                        original = getattr(obj, prop)
+
+                        if action.is_rotation():
+                            setattr(
+                                obj,
+                                prop,
+                                Euler(
+                                    (
+                                        original.x + value.x,
+                                        original.y + value.y,
+                                        original.z + value.z,
+                                    ),
+                                    "XYZ",
+                                ),
+                            )
+                        else:
+                            setattr(obj, prop, original + value)
                     else:
-                        setattr(obj, prop, action.value())
+                        setattr(obj, prop, value)
 
                     obj.keyframe_insert(data_path=prop, frame=frame)

@@ -31,7 +31,7 @@ def create_frames(node: Node) -> list[Frame]:
                     f.time,
                     f.trigger,
                     f.property,
-                    Vector(
+                    Euler(
                         (
                             math.radians(f.x),
                             math.radians(f.y),
@@ -51,6 +51,7 @@ def create_frames(node: Node) -> list[Frame]:
                         )
                     ),
                     relative=f.relative,
+                    is_rotation=f.property == "rotation_euler",
                 )
             )
 

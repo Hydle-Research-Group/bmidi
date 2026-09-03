@@ -12,6 +12,8 @@ class Frame:
     - `trigger`: the `FrameTrigger` that determines when the frame occurs
     - `property`: the [Blender object property](https://docs.blender.org/api/current/bpy.props.html) of the event
     - `value`: the value `property` is set to
+    - `relative`: if the property is adjusted from an original value
+    - `is_rotation`: if the property is a rotation property
     """
 
     def __init__(
@@ -22,6 +24,7 @@ class Frame:
         property: str,
         value: Any,
         relative: bool = False,
+        is_rotation: bool = False,
     ):
         self._object = object
         self._time = time
@@ -29,6 +32,7 @@ class Frame:
         self._property = property
         self._value = value
         self._relative = relative
+        self._is_rotation = is_rotation
 
     def object(self) -> Object:
         """
@@ -68,6 +72,13 @@ class Frame:
     def relative(self) -> bool:
         """
         Returns if the frame is relative.
+        """
+
+        return self._relative
+
+    def is_rotation(self) -> bool:
+        """
+        Returns if the frame is a rotation.
         """
 
         return self._relative
