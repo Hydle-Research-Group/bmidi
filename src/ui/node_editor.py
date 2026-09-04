@@ -1,7 +1,7 @@
 import math
 
 import bpy
-from bpy.types import Context, Node, NodeLink, NodeOutputs, NodeSocket, NodeTree
+from bpy.types import Context, Node, NodeOutputs, NodeSocket, NodeTree
 from mathutils import Euler, Vector
 
 from src.engine.controller import NoteController
@@ -15,15 +15,15 @@ def draw_add_menu(self, context):
     if context.space_data.tree_type != BMIDI_NodeTree.bl_idname:
         return
 
-    self.node_operator(layout, "BMIDI_Node_MIDIData")
-    self.node_operator(layout, "BMIDI_Node_MIDIDataFilter")
-    self.node_operator(layout, "BMIDI_Node_FrameCollection")
+    self.node_operator(layout, NodeID.MidiDataNode)
+    self.node_operator(layout, NodeID.MidiDataFilterNode)
+    self.node_operator(layout, NodeID.FrameCollectionNode)
 
 
 def create_frames(node: Node) -> list[Frame]:
     frames = []
 
-    if node.bl_idname == "BMIDI_Node_FrameCollection":
+    if node.bl_idname == NodeID.FrameCollectionNode:
         for f in node.frames:
             frames.append(
                 Frame(
@@ -68,7 +68,7 @@ def create_events(
         for link in output.links:
             node = link.to_node
 
-            if node.bl_idname == "BMIDI_Node_FrameCollection":
+            if node.bl_idname == NodeID.FrameCollectionNode:
                 for n in notes:
                     key = (n.note(), n.channel())
 
@@ -77,7 +77,7 @@ def create_events(
                     else:
                         events[(n.note(), n.channel())] = create_frames(node)
 
-            elif node.bl_idname == "BMIDI_Node_MIDIDataFilter":
+            elif node.bl_idname == NodeID.MidiDataFilterNode:
                 filtered_notes = [
                     n
                     for n in notes
@@ -92,6 +92,16 @@ def create_events(
                 )
 
     return events
+
+
+class NodeID:
+    """
+    IDs for bmidi type nodes.
+    """
+
+    MidiDataNode = "MIDIDATA"
+    MidiDataFilterNode = "MIDIFILTER"
+    FrameCollectionNode = "FRAMECOLLECTION"
 
 
 class BMIDI_MIDIEvent(bpy.types.PropertyGroup):
@@ -270,6 +280,40 @@ class BMIDI_OT_frame_collection_duplicate(bpy.types.Operator):
         return {"FINISHED"}
 
 
+class BMIDI_OT_copy_from_selected(bpy.types.Operator):
+    """Copy the properties from the selected object"""
+
+    bl_idname = "bmidi_ops.copy_from_selected"
+    bl_label = "Copy From Selected"
+
+    node_name: bpy.props.StringProperty()
+
+    def execute(self, context: Context):
+        node = context.space_data.edit_tree.nodes.get(self.node_name)
+        selection = context.active_object
+
+        if selection is None:
+            return {"CANCELLED"}
+
+        if node.bl_idname == NodeID.FrameCollectionNode:
+            frame = node.frames[node.active_frame]
+            property = frame.property
+
+            if property not in ("data.energy", "data.spot_size"):
+                value = getattr(selection, property)
+                frame.x = (
+                    math.degrees(value.x) if property == "rotation_euler" else value.x
+                )
+                frame.y = (
+                    math.degrees(value.y) if property == "rotation_euler" else value.y
+                )
+                frame.z = (
+                    math.degrees(value.z) if property == "rotation_euler" else value.z
+                )
+
+        return {"FINISHED"}
+
+
 class BMIDI_OT_midi_data_generate(bpy.types.Operator):
     """Generate keyframes from the MIDI node graph"""
 
@@ -283,7 +327,7 @@ class BMIDI_OT_midi_data_generate(bpy.types.Operator):
         nodes = context.space_data.edit_tree.nodes
 
         for n in nodes:
-            if n.bl_idname == "BMIDI_Node_FrameCollection" and n.object is not None:
+            if n.bl_idname == NodeID.FrameCollectionNode and n.object is not None:
                 n.object.animation_data_clear()
 
         node = nodes.get(self.node_name)
@@ -305,7 +349,7 @@ class BMIDI_OT_midi_data_generate(bpy.types.Operator):
 
 
 class BMIDI_NodeTree(NodeTree):
-    """ """
+    """Node editor for creating MIDI-based animations"""
 
     bl_idname = "BMIDI_NodeTree"
     bl_label = "bmidi Node Editor"
@@ -329,7 +373,7 @@ class BMIDI_MIDIDataSocket(NodeSocket):
 
 
 class BMIDI_Node_MIDIData(BMIDI_TreeNode, Node):
-    bl_idname = "BMIDI_Node_MIDIData"
+    bl_idname = NodeID.MidiDataNode
     bl_label = "MIDI Data"
 
     midi_file: bpy.props.StringProperty(
@@ -379,7 +423,7 @@ class BMIDI_Node_MIDIData(BMIDI_TreeNode, Node):
 
 
 class BMIDI_Node_MIDIDataFilter(BMIDI_TreeNode, Node):
-    bl_idname = "BMIDI_Node_MIDIDataFilter"
+    bl_idname = NodeID.MidiDataFilterNode
     bl_label = "MIDI Data Filter"
 
     note: bpy.props.IntProperty(
@@ -409,7 +453,7 @@ class BMIDI_Node_MIDIDataFilter(BMIDI_TreeNode, Node):
 
 
 class BMIDI_Node_FrameCollection(BMIDI_TreeNode, Node):
-    bl_idname = "BMIDI_Node_FrameCollection"
+    bl_idname = NodeID.FrameCollectionNode
     bl_label = "Frame Collection"
 
     object: bpy.props.PointerProperty(type=bpy.types.Object, name="Object")
@@ -490,6 +534,12 @@ class BMIDI_Node_FrameCollection(BMIDI_TreeNode, Node):
             row.prop(frame, "x")
             row.prop(frame, "y")
             row.prop(frame, "z")
+            op = row.operator(
+                "bmidi_ops.copy_from_selected",
+                icon="DUPLICATE",
+                text="",
+            )
+            op.node_name = self.name
 
         layout.separator()
 
