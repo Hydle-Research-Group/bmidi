@@ -18,7 +18,7 @@ def set_prop(obj, prop_path: str, value):
 
 class Controller:
     """
-    A controller object.
+    Base class for controller objects.
 
     - `notes`: a list of `MidiNote` objects
     - `frame_offset`: the relative offset of the generated frames
@@ -48,19 +48,21 @@ class Controller:
 
     def generate_keyframes(self) -> None:
         """
-        Generate the keyframes for this controller.
+        Generate the object keyframes for this controller.
         """
 
-        pass
+    def clear_keyframes(self) -> None:
+        """
+        Clear the object keyframes for this controller.
+        """
 
 
 class NoteController(Controller):
     """
-    A controller that key-frames a set of `Frame` objects based on specific MIDI notes.
+    A controller that keyframes a set of `Frame` objects based on specific MIDI notes.
 
-    - `note_events`: a dictionary of MIDI notes corresponding to their frames
+    - `note_events`: a dictionary of MIDI notes/channels corresponding to their frames
     - `notes`: a list of `MidiNote` objects
-    - `events`: a list of `Event` objects
     - `frame_offset`: the relative offset of the generated frames
     """
 
@@ -78,14 +80,6 @@ class NoteController(Controller):
         note_events = self.note_events
         fps = bpy.context.scene.render.fps
         frame_offset = self.frame_offset()
-
-        # clear animation data
-        for (n, _), frames in note_events.items():
-            for f in frames:
-                if type(f) == ObjectFrame:
-                    f.object().animation_data_clear()
-                elif type(f) == PrefixFrame:
-                    bpy.data.objects[f"{f.prefix()}{n}"].animation_data_clear()
 
         for i, note in enumerate(notes):
             start = note.start() * fps + frame_offset
@@ -143,3 +137,11 @@ class NoteController(Controller):
                         setattr(obj, prop, value)
 
                     obj.keyframe_insert(data_path=prop, frame=frame)
+
+    def clear_keyframes(self):
+        for (n, _), frames in self.note_events.items():
+            for f in frames:
+                if type(f) == ObjectFrame:
+                    f.object().animation_data_clear()
+                elif type(f) == PrefixFrame:
+                    bpy.data.objects[f"{f.prefix()}{n}"].animation_data_clear()

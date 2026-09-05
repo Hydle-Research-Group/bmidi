@@ -349,6 +349,7 @@ class BMIDI_OT_midi_data_generate(bpy.types.Operator):
             [n for n in notes if events.get((n.note(), n.channel()))],
             frame_offset=node.frame_offset,
         )
+        controller.clear_keyframes()
         controller.generate_keyframes()
 
         return {"FINISHED"}
