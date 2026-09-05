@@ -459,6 +459,36 @@ class BMIDI_Node_MIDIDataFilter(BMIDI_TreeNode, Node):
         self.outputs.new("MIDIDataSocket", "Filtered Event Data")
 
 
+class BMIDI_Node_MIDIDataRangeFilter(BMIDI_TreeNode, Node):
+    bl_idname = NodeID.MidiDataFilterNode
+    bl_label = "MIDI Data Range Filter"
+
+    note: bpy.props.IntProperty(
+        name="Note",
+        description="Filter MIDI event data containing the specified note",
+        default=60,
+        min=0,
+        max=127,
+    )
+    channel: bpy.props.IntProperty(
+        name="Channel",
+        description="Filter MIDI event data containing the specified channel",
+        default=10,
+        min=1,
+        max=16,
+    )
+
+    def draw_buttons(self, context, layout):
+        layout.prop(self, "note")
+        layout.prop(self, "channel")
+        layout.separator()
+
+    def init(self, context):
+        self.inputs.new("MIDIDataSocket", "Input Event Data")
+
+        self.outputs.new("MIDIDataSocket", "Filtered Event Data")
+
+
 class BMIDI_Node_FrameCollection(BMIDI_TreeNode, Node):
     bl_idname = NodeID.FrameCollectionNode
     bl_label = "Frame Collection"
