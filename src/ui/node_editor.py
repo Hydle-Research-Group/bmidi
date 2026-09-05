@@ -5,7 +5,7 @@ from bpy.types import Context, Node, NodeOutputs, NodeSocket, NodeTree
 from mathutils import Euler, Vector
 
 from src.engine.controller import NoteController
-from src.engine.frame import Frame, FrameTrigger
+from src.engine.frame import Frame, FrameTrigger, ObjectFrame, PrefixFrame
 from src.engine.helpers import get_midi_channel_ranges
 from src.engine.note import MidiNote, parse_midi
 
@@ -25,35 +25,45 @@ def create_frames(node: Node) -> list[Frame]:
 
     if node.bl_idname == NodeID.FrameCollectionNode:
         for f in node.frames:
-            frames.append(
-                Frame(
-                    node.object,
-                    f.time,
-                    f.trigger,
-                    f.property,
-                    Euler(
-                        (
-                            math.radians(f.x),
-                            math.radians(f.y),
-                            math.radians(f.z),
-                        )
+            if f.property == "rotation_euler":
+                value = Euler(
+                    (
+                        math.radians(f.x),
+                        math.radians(f.y),
+                        math.radians(f.z),
                     )
-                    if f.property == "rotation_euler"
-                    else (
-                        math.radians(f.x)
-                        if f.property == "data.spot_size"
-                        else Vector(
-                            (
-                                f.x,
-                                f.y,
-                                f.z,
-                            )
-                        )
-                    ),
-                    relative=f.relative,
-                    is_rotation=f.property == "rotation_euler",
                 )
-            )
+            elif f.property == "data.spot_size":
+                value = math.radians(f.x)
+            else:
+                value = Vector((f.x, f.y, f.z))
+
+            is_rotation = f.property == "rotation_euler"
+
+            if node.mode == "OBJECT":
+                frames.append(
+                    ObjectFrame(
+                        node.object,
+                        f.time,
+                        f.trigger,
+                        f.property,
+                        value,
+                        relative=f.relative,
+                        is_rotation=is_rotation,
+                    )
+                )
+            elif node.mode == "PREFIX":
+                frames.append(
+                    PrefixFrame(
+                        node.prefix,
+                        f.time,
+                        f.trigger,
+                        f.property,
+                        value,
+                        relative=f.relative,
+                        is_rotation=is_rotation,
+                    )
+                )
 
     return frames
 
@@ -326,10 +336,6 @@ class BMIDI_OT_midi_data_generate(bpy.types.Operator):
         context.scene.frame_set(-1)
         nodes = context.space_data.edit_tree.nodes
 
-        for n in nodes:
-            if n.bl_idname == NodeID.FrameCollectionNode and n.object is not None:
-                n.object.animation_data_clear()
-
         node = nodes.get(self.node_name)
         midi_file = node.midi_file
 
@@ -456,7 +462,24 @@ class BMIDI_Node_FrameCollection(BMIDI_TreeNode, Node):
     bl_idname = NodeID.FrameCollectionNode
     bl_label = "Frame Collection"
 
+    mode: bpy.props.EnumProperty(
+        name="Mode",
+        items=[
+            (
+                "PREFIX",
+                "Prefix",
+                "Generate frames for a set of objects with the format [prefix][note]",
+            ),
+            (
+                "OBJECT",
+                "Object",
+                "Generate frames for a single object",
+            ),
+        ],
+        default="OBJECT",
+    )
     object: bpy.props.PointerProperty(type=bpy.types.Object, name="Object")
+    prefix: bpy.props.StringProperty(name="Target Prefix")
     frames: bpy.props.CollectionProperty(
         type=BMIDI_Frame,
     )
@@ -465,7 +488,12 @@ class BMIDI_Node_FrameCollection(BMIDI_TreeNode, Node):
     )
 
     def draw_buttons(self, context, layout):
-        layout.prop(self, "object")
+        layout.prop(self, "mode")
+
+        if self.mode == "OBJECT":
+            layout.prop(self, "object")
+        elif self.mode == "PREFIX":
+            layout.prop(self, "prefix")
 
         row = layout.row()
         row.template_list(

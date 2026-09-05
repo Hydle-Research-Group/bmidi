@@ -1,7 +1,7 @@
 import bpy
 from mathutils import Euler
 
-from src.engine.frame import Frame, FrameTrigger
+from src.engine.frame import Frame, FrameTrigger, ObjectFrame, PrefixFrame
 from src.engine.note import MidiNote
 
 
@@ -56,7 +56,7 @@ class Controller:
 
 class NoteController(Controller):
     """
-    A controller that key-frames a set of `Keyframe` objects based on specific MIDI notes.
+    A controller that key-frames a set of `Frame` objects based on specific MIDI notes.
 
     - `note_events`: a dictionary of MIDI notes corresponding to their frames
     - `notes`: a list of `MidiNote` objects
@@ -79,6 +79,14 @@ class NoteController(Controller):
         fps = bpy.context.scene.render.fps
         frame_offset = self.frame_offset()
 
+        # clear animation data
+        for (n, _), frames in note_events.items():
+            for f in frames:
+                if type(f) == ObjectFrame:
+                    f.object().animation_data_clear()
+                elif type(f) == PrefixFrame:
+                    bpy.data.objects[f"{f.prefix()}{n}"].animation_data_clear()
+
         for i, note in enumerate(notes):
             start = note.start() * fps + frame_offset
             end = note.end() * fps + frame_offset
@@ -86,7 +94,11 @@ class NoteController(Controller):
             for action in note_events[(note.note(), note.channel())]:
                 time = action.time() * fps
                 prop = action.property()
-                obj = action.object()
+
+                if type(action) == ObjectFrame:
+                    obj = action.object()
+                elif type(f) == PrefixFrame:
+                    obj = bpy.data.objects[f"{action.prefix()}{note.note()}"]
 
                 if action.trigger() == FrameTrigger.BeforeStart:
                     frame = start - time
