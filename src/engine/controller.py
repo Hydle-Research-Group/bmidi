@@ -91,7 +91,7 @@ class NoteController(Controller):
 
                 if type(action) == ObjectFrame:
                     obj = action.object()
-                elif type(f) == PrefixFrame:
+                elif type(action) == PrefixFrame:
                     obj = bpy.data.objects[f"{action.prefix()}{note.note()}"]
 
                 if action.trigger() == FrameTrigger.BeforeStart:
