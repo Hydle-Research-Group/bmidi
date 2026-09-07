@@ -1,6 +1,6 @@
 <img src="assets/bmidi.png">
 
-bmidi is a Python-based automatic key-framing tool for MIDI data, allowing users to create MIDI-driven animations in Blender.
+bmidi is a node-based MIDI animation system for Blender, built in Python.
 
 ## Installing `bmidi`
 
@@ -43,25 +43,31 @@ Then upgrade it with:
 
 ### 3. Run `main.py`
 
-Create a new Blender project inside the root of this repository, and open the `main.py` file inside the "Script" tab. Run the file with `Alt-P` or use the run button located right next to the file name, launching bmidi's panel.
+Create a new Blender project inside the root of this repository, and open the `main.py` file inside the "Script" tab. Run the file with `Alt-P` or use the run button located right next to the file name, launching bmidi's node editor.
 
-## Using `bmidi`
+## Using `bmidi`'s Node Editor
 
-bmidi's user interface consists of panel with controls for frame generation.
+bmidi's node editor contains various node types to animate MIDI data.
 
-- You can add or remove an item with the "+" or "-" buttons located in the top right of the panel.
-- Items contain "events" or individual things that occur every time a MIDI note happens. 
-- An item has a prefix for the name of the object; events target the object prefix + note (e.g. `Drum25`).
+- `MIDI Data`: the "root" node of the graph, containing the MIDI file and data.
+- `MIDI Data Filter`: a node for filtering input MIDI data based on a specific note and channel.
+- `Frame Collection`: a node for animating objects given the input MIDI data.
 
-For all items, there is a `Channel` dropdown for selecting the specific channel that controls the objects. `Note Range Start` and `Note Range End` will allow notes between that range. 
+### MIDI Data Node
 
-Additionally, if `Use Block List` is selected, you can create a comma separated list of notes to block. The syntax supports notes (`X, Y, Z`), and ranges (`X-Y, Y-Z`).
+`MIDI Data` nodes contain a MIDI file and have an output for the parsed MIDI data. There are controls for generating object keyframes, including a "frame offset" input for offsetting the animation start.
 
-**Clicking "Generate Keyframes" will set the timeline to `-1`, reset the animation data for all composition and controller objects, then generate the frames.**
+**Clicking "Generate Keyframes" will set the timeline to `-1`, reset the animation data for all specified objects, then generate the frames.**
 
-## Capabilites
+### MIDI Data Filter Node
 
-There are a collection of demo videos in [this YouTube playlist](https://www.youtube.com/playlist?list=PLRZuj2NaHK4KhIysZkML9mRQQlm8HeguG) showcasing what bmidi is capable of. Additionally, all music is original.
+`MIDI Data Filter` nodes filter input MIDI data based on a specified note and channel, outputting the filtered data.
+
+### Frame Collection Node
+
+`Frame Collection` nodes allow you to describe a set of frames that occur during certain triggers (e.g., when a note starts) 
+
+These frames act either on a specific object, or a _target prefix_, where target prefixes are in the format `[prefix][note number]`. For example, an object might be named `Drum60`, so it's prefix would be `Drum` and bmidi would append `[note number]` to the end. 
 
 ## Free & Open-Source
 
