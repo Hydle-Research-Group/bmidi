@@ -1,7 +1,7 @@
 import math
 
 import bpy
-from bpy.types import Context, Node, NodeOutputs, NodeSocket, NodeTree
+from bpy.types import Context, Node, NodeOutputs, NodeSocket, NodeTree, UILayout
 from mathutils import Euler, Vector
 
 from src.engine.controller import NoteController
@@ -85,14 +85,38 @@ def create_events(
                     if events.get(key):
                         events[key].extend(create_frames(node))
                     else:
-                        events[(n.note(), n.channel())] = create_frames(node)
+                        events[key] = create_frames(node)
 
             elif node.bl_idname == NodeID.MidiDataFilterNode:
-                filtered_notes = [
-                    n
-                    for n in notes
-                    if n.note() == node.note and n.channel() == node.channel - 1
-                ]
+                filtered_notes = notes
+
+                if node.note_range:
+                    filtered_notes = [
+                        n
+                        for n in filtered_notes
+                        if node.note_start <= n.note() <= node.note_end
+                    ]
+                else:
+                    filtered_notes = [
+                        n for n in filtered_notes if n.note() == node.note
+                    ]
+
+                if node.channel_range:
+                    # midi channels are 0-15
+                    channel_start = node.channel_start - 1
+                    channel_end = node.channel_end - 1
+
+                    filtered_notes = [
+                        n
+                        for n in filtered_notes
+                        if channel_start <= n.channel() <= channel_end
+                    ]
+                else:
+                    channel = node.channel - 1
+
+                    filtered_notes = [
+                        n for n in filtered_notes if n.channel() == channel
+                    ]
 
                 events.update(
                     create_events(
@@ -433,10 +457,31 @@ class BMIDI_Node_MIDIDataFilter(BMIDI_TreeNode, Node):
     bl_idname = NodeID.MidiDataFilterNode
     bl_label = "MIDI Data Filter"
 
+    note_range: bpy.props.BoolProperty(
+        name="Note Range", description="Filter MIDI event data by a range of notes"
+    )
+    channel_range: bpy.props.BoolProperty(
+        name="Channel Range",
+        description="Filter MIDI event data by a range of channels",
+    )
     note: bpy.props.IntProperty(
         name="Note",
         description="Filter MIDI event data containing the specified note",
         default=60,
+        min=0,
+        max=127,
+    )
+    note_start: bpy.props.IntProperty(
+        name="Note Range Start",
+        description="Filter MIDI event data from this note and up",
+        default=1,
+        min=0,
+        max=127,
+    )
+    note_end: bpy.props.IntProperty(
+        name="Note Range End",
+        description="Filter MIDI event data from this note and below",
+        default=127,
         min=0,
         max=127,
     )
@@ -447,10 +492,38 @@ class BMIDI_Node_MIDIDataFilter(BMIDI_TreeNode, Node):
         min=1,
         max=16,
     )
+    channel_start: bpy.props.IntProperty(
+        name="Channel Range Start",
+        description="Filter MIDI event data from this channel and up",
+        default=1,
+        min=1,
+        max=16,
+    )
+    channel_end: bpy.props.IntProperty(
+        name="Channel Range End",
+        description="Filter MIDI event data from this channel and below",
+        default=16,
+        min=1,
+        max=16,
+    )
 
-    def draw_buttons(self, context, layout):
-        layout.prop(self, "note")
-        layout.prop(self, "channel")
+    def draw_buttons(self, context, layout: UILayout):
+        layout.prop(self, "note_range")
+
+        if self.note_range:
+            layout.prop(self, "note_start")
+            layout.prop(self, "note_end")
+        else:
+            layout.prop(self, "note")
+
+        layout.prop(self, "channel_range")
+
+        if self.channel_range:
+            layout.prop(self, "channel_start")
+            layout.prop(self, "channel_end")
+        else:
+            layout.prop(self, "channel")
+
         layout.separator()
 
     def init(self, context):
