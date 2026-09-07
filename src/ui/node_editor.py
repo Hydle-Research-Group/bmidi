@@ -656,4 +656,4 @@ class BMIDI_Node_FrameCollection(BMIDI_TreeNode, Node):
         layout.separator()
 
     def init(self, context):
-        self.inputs.new("MIDIDataSocket", "Input Event Data")
+        self.inputs.new("MIDIDataSocket", "Input Event Data", use_multi_input=True)
