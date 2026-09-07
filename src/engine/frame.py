@@ -145,6 +145,8 @@ class PrefixFrame(Frame):
 
 
 class FrameTrigger:
+    BeforeFirstNoteStarts = "BEFORE_FIRST_NOTE_START"
+    AfterLastNoteEnds = "BEFORE_LAST_NOTE_END"
     BeforeStart = "BEFORE_START"
     BeforeEnd = "BEFORE_END"
     AfterStart = "AFTER_END"

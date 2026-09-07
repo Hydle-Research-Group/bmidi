@@ -176,6 +176,16 @@ class BMIDI_Frame(bpy.types.PropertyGroup):
                 "After MIDI Note Ends",
                 "Execute this event after the MIDI note ends",
             ),
+            (
+                FrameTrigger.BeforeFirstNoteStarts,
+                "Before First MIDI Note Starts",
+                "Execute this event before the first MIDI note starts",
+            ),
+            (
+                FrameTrigger.AfterLastNoteEnds,
+                "After Last MIDI Note Ends",
+                "Execute this event after the last MIDI note ends",
+            ),
         ],
         default=FrameTrigger.BeforeStart,
     )

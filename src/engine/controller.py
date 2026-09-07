@@ -102,6 +102,16 @@ class NoteController(Controller):
                     frame = end - time
                 elif action.trigger() == FrameTrigger.AfterEnd:
                     frame = end + time
+                elif action.trigger() == FrameTrigger.BeforeFirstNoteStarts:
+                    if i != 0:
+                        continue
+
+                    frame = start - time
+                elif action.trigger() == FrameTrigger.AfterLastNoteEnds:
+                    if i != len(notes) - 1:
+                        continue
+
+                    frame = end + time
                 else:
                     frame = start
 
