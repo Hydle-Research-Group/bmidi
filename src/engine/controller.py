@@ -1,7 +1,8 @@
 import bpy
+from bpy_extras import anim_utils
 from mathutils import Euler
 
-from src.engine.frame import Frame, FrameTrigger, ObjectFrame, PrefixFrame
+from src.engine.frame import ActionFrame, Frame, FrameTrigger, ObjectFrame, PrefixFrame
 from src.engine.note import MidiNote
 
 
@@ -89,7 +90,7 @@ class NoteController(Controller):
                 time = frame_event.time() * fps
                 prop = frame_event.property()
 
-                if isinstance(frame_event, ObjectFrame):
+                if isinstance(frame_event, (ObjectFrame, ActionFrame)):
                     obj = frame_event.object()
                 elif isinstance(frame_event, PrefixFrame):
                     obj = bpy.data.objects[f"{frame_event.prefix()}{note.note()}"]
@@ -114,6 +115,38 @@ class NoteController(Controller):
                     frame = end + time
                 else:
                     frame = start
+
+                if isinstance(frame_event, ActionFrame):
+                    channelbag = anim_utils.action_get_channelbag_for_slot(
+                        frame_event.action(), obj.animation_data.action_slot
+                    )
+
+                    if not channelbag:
+                        continue
+
+                    for fcurve in channelbag.fcurves:
+                        for keyframe in fcurve.keyframe_points:
+                            keyframe_frame = frame + keyframe.co.x
+                            value = keyframe.co.y
+
+                            prop = obj.path_resolve(fcurve.data_path)
+
+                            if fcurve.array_index >= 0:
+                                prop[fcurve.array_index] = value
+                            else:
+                                setattr(
+                                    obj,
+                                    fcurve.data_path,
+                                    value,
+                                )
+
+                            obj.keyframe_insert(
+                                data_path=fcurve.data_path,
+                                index=fcurve.array_index,
+                                frame=keyframe_frame,
+                            )
+
+                    continue  # skip normal keyframing
 
                 value = frame_event.value()
 
@@ -155,3 +188,14 @@ class NoteController(Controller):
                     f.object().animation_data_clear()
                 elif isinstance(f, PrefixFrame):
                     bpy.data.objects[f"{f.prefix()}{n}"].animation_data_clear()
+                elif isinstance(f, ActionFrame):
+                    obj = f.object()
+
+                    if obj.animation_data and obj.animation_data.action:
+                        channelbag = anim_utils.action_get_channelbag_for_slot(
+                            obj.animation_data.action,
+                            obj.animation_data.action_slot,
+                        )
+
+                        if channelbag:
+                            channelbag.fcurves.clear()

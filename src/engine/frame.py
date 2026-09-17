@@ -1,6 +1,6 @@
 from typing import Any
 
-from bpy.types import Object
+from bpy.types import Action, Object
 
 
 class Frame:
@@ -142,6 +142,43 @@ class PrefixFrame(Frame):
         """
 
         return self._prefix
+
+
+class ActionFrame(Frame):
+    """
+    A single frame animating the action on a specific object.
+
+    - `object`: the object to animate
+    - `action`: the action
+    - `time`: the relative time (in seconds)
+    - `trigger`: the `FrameTrigger` that determines when the frame occurs
+    """
+
+    def __init__(
+        self,
+        object: Object,
+        action: Action,
+        time: float,
+        trigger: str,
+    ):
+        super().__init__(time, trigger, "", None, False, False)
+
+        self._object = object
+        self._action = action
+
+    def object(self) -> Object:
+        """
+        Returns the frame's object.
+        """
+
+        return self._object
+
+    def action(self) -> Action:
+        """
+        Returns the frame's action.
+        """
+
+        return self._action
 
 
 class FrameTrigger:

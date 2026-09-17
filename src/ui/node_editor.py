@@ -5,7 +5,7 @@ from bpy.types import Context, Node, NodeOutputs, NodeSocket, NodeTree, UILayout
 from mathutils import Euler, Vector
 
 from src.engine.controller import NoteController
-from src.engine.frame import Frame, FrameTrigger, ObjectFrame, PrefixFrame
+from src.engine.frame import ActionFrame, Frame, FrameTrigger, ObjectFrame, PrefixFrame
 from src.engine.helpers import get_midi_channel_ranges
 from src.engine.note import MidiNote, parse_midi
 
@@ -18,6 +18,7 @@ def draw_add_menu(self, context):
     self.node_operator(layout, NodeID.MidiDataNode)
     self.node_operator(layout, NodeID.MidiDataFilterNode)
     self.node_operator(layout, NodeID.FrameCollectionNode)
+    self.node_operator(layout, NodeID.ActionCopierNode)
 
 
 def create_frames(node: Node) -> list[Frame]:
@@ -65,6 +66,16 @@ def create_frames(node: Node) -> list[Frame]:
                     )
                 )
 
+    elif node.bl_idname == NodeID.ActionCopierNode:
+        frames.append(
+            ActionFrame(
+                node.object,
+                node.action,
+                node.time,
+                node.trigger,
+            )
+        )
+
     return frames
 
 
@@ -78,7 +89,7 @@ def create_events(
         for link in output.links:
             node = link.to_node
 
-            if node.bl_idname == NodeID.FrameCollectionNode:
+            if node.bl_idname in (NodeID.FrameCollectionNode, NodeID.ActionCopierNode):
                 for n in notes:
                     key = (n.note(), n.channel())
 
@@ -136,6 +147,7 @@ class NodeID:
     MidiDataNode = "MIDIDATA"
     MidiDataFilterNode = "MIDIFILTER"
     FrameCollectionNode = "FRAMECOLLECTION"
+    ActionCopierNode = "ACTIONCOPIER"
 
 
 class BMIDI_MIDIEvent(bpy.types.PropertyGroup):
@@ -652,6 +664,75 @@ class BMIDI_Node_FrameCollection(BMIDI_TreeNode, Node):
                 text="",
             )
             op.node_name = self.name
+
+        layout.separator()
+
+    def init(self, context):
+        self.inputs.new("MIDIDataSocket", "Input Event Data", use_multi_input=True)
+
+
+class BMIDI_Node_ActionCopier(BMIDI_TreeNode, Node):
+    bl_idname = NodeID.ActionCopierNode
+    bl_label = "Action Copier"
+
+    object: bpy.props.PointerProperty(type=bpy.types.Object, name="Object")
+    action: bpy.props.PointerProperty(
+        type=bpy.types.Action,
+        name="Action",
+        description="Action to copy every time a MIDI event occurs",
+    )
+    time: bpy.props.FloatProperty(
+        name="Time (s)",
+        description="Time in seconds relative to the MIDI note",
+        default=0.0,
+        soft_min=0.0,
+    )
+    trigger: bpy.props.EnumProperty(
+        name="Trigger",
+        items=[
+            (
+                FrameTrigger.BeforeStart,
+                "Before MIDI Note Starts",
+                "Execute this action before the MIDI note starts",
+            ),
+            (
+                FrameTrigger.AfterStart,
+                "After MIDI Note Starts",
+                "Execute this action after the MIDI note starts",
+            ),
+            (
+                FrameTrigger.BeforeEnd,
+                "Before MIDI Note Ends",
+                "Execute this action before the MIDI note ends",
+            ),
+            (
+                FrameTrigger.AfterEnd,
+                "After MIDI Note Ends",
+                "Execute this action after the MIDI note ends",
+            ),
+            (
+                FrameTrigger.BeforeFirstNoteStarts,
+                "Before First MIDI Note Starts",
+                "Execute this action before the first MIDI note starts",
+            ),
+            (
+                FrameTrigger.AfterLastNoteEnds,
+                "After Last MIDI Note Ends",
+                "Execute this action after the last MIDI note ends",
+            ),
+        ],
+        default=FrameTrigger.BeforeStart,
+    )
+
+    def draw_buttons(self, context, layout):
+        layout.prop(self, "object")
+        layout.prop(self, "action")
+
+        layout.separator()
+
+        row = layout.row(align=True)
+        row.prop(self, "time")
+        row.prop(self, "trigger", text="")
 
         layout.separator()
 
