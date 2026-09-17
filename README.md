@@ -52,6 +52,7 @@ bmidi's node editor contains various node types to animate MIDI data.
 - `MIDI Data`: the "root" node of the graph, containing the MIDI file and data.
 - `MIDI Data Filter`: a node for filtering input MIDI data based on a specific note and channel.
 - `Frame Collection`: a node for animating objects given the input MIDI data.
+- `Action Copier`: a node for animating actions on objects given the input MIDI data.
 
 ### MIDI Data Node
 
@@ -68,6 +69,12 @@ bmidi's node editor contains various node types to animate MIDI data.
 `Frame Collection` nodes allow you to describe a set of frames that occur during certain triggers (e.g., when a note starts) 
 
 These frames act either on a specific object, or a _target prefix_, where target prefixes are in the format `[prefix][note number]`. For example, an object might be named `Drum60`, so it's prefix would be `Drum` and bmidi would append `[note number]` to the end. 
+
+### Action Copier Node
+
+`Action Copier` nodes allow you to select a specific action that is applied to an object every time a MIDI event occurs. 
+
+The action's f-curves (keyframes) are copied along the timeline so that when the MIDI note is played, the action is animated at that point.
 
 ## Free & Open-Source
 

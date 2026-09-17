@@ -23,11 +23,11 @@ initialize()
 
 bl_info = {
     "name": "bmidi",
-    "author": "Keller Hydle",
-    "version": (0, 0, 1),
+    "author": "Hydle Research Group",
+    "version": (0, 1, 0),
     "blender": (5, 0, 0),
     "location": "3D Viewport > Sidebar > bmidi",
-    "description": "Automatic MIDI-data keyframing for Blender objects",
+    "description": "A node-based MIDI animation system for Blender.",
     "category": "Development",
 }
 
