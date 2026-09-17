@@ -85,29 +85,29 @@ class NoteController(Controller):
             start = note.start() * fps + frame_offset
             end = note.end() * fps + frame_offset
 
-            for action in note_events[(note.note(), note.channel())]:
-                time = action.time() * fps
-                prop = action.property()
+            for frame_event in note_events[(note.note(), note.channel())]:
+                time = frame_event.time() * fps
+                prop = frame_event.property()
 
-                if type(action) == ObjectFrame:
-                    obj = action.object()
-                elif type(action) == PrefixFrame:
-                    obj = bpy.data.objects[f"{action.prefix()}{note.note()}"]
+                if isinstance(frame_event, ObjectFrame):
+                    obj = frame_event.object()
+                elif isinstance(frame_event, PrefixFrame):
+                    obj = bpy.data.objects[f"{frame_event.prefix()}{note.note()}"]
 
-                if action.trigger() == FrameTrigger.BeforeStart:
+                if frame_event.trigger() == FrameTrigger.BeforeStart:
                     frame = start - time
-                elif action.trigger() == FrameTrigger.AfterStart:
+                elif frame_event.trigger() == FrameTrigger.AfterStart:
                     frame = start + time
-                elif action.trigger() == FrameTrigger.BeforeEnd:
+                elif frame_event.trigger() == FrameTrigger.BeforeEnd:
                     frame = end - time
-                elif action.trigger() == FrameTrigger.AfterEnd:
+                elif frame_event.trigger() == FrameTrigger.AfterEnd:
                     frame = end + time
-                elif action.trigger() == FrameTrigger.BeforeFirstNoteStarts:
+                elif frame_event.trigger() == FrameTrigger.BeforeFirstNoteStarts:
                     if i != 0:
                         continue
 
                     frame = start - time
-                elif action.trigger() == FrameTrigger.AfterLastNoteEnds:
+                elif frame_event.trigger() == FrameTrigger.AfterLastNoteEnds:
                     if i != len(notes) - 1:
                         continue
 
@@ -115,20 +115,20 @@ class NoteController(Controller):
                 else:
                     frame = start
 
-                value = action.value()
+                value = frame_event.value()
 
                 if prop in ("data.spot_size", "data.energy"):
-                    if action.relative():
+                    if frame_event.relative():
                         set_prop(obj, prop, get_prop(obj, prop) + value)
                     else:
                         set_prop(obj, prop, value)
 
                     obj.keyframe_insert(data_path="data", frame=frame)
                 else:
-                    if action.relative():
+                    if frame_event.relative():
                         original = getattr(obj, prop)
 
-                        if action.is_rotation():
+                        if frame_event.is_rotation():
                             setattr(
                                 obj,
                                 prop,
@@ -151,7 +151,7 @@ class NoteController(Controller):
     def clear_keyframes(self):
         for (n, _), frames in self.note_events.items():
             for f in frames:
-                if type(f) == ObjectFrame:
+                if isinstance(f, ObjectFrame):
                     f.object().animation_data_clear()
-                elif type(f) == PrefixFrame:
+                elif isinstance(f, PrefixFrame):
                     bpy.data.objects[f"{f.prefix()}{n}"].animation_data_clear()
